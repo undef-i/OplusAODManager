@@ -1,13 +1,37 @@
 package org.noxylva.oplusaod;
 
 import android.content.Context;
+import android.content.Intent;
+import android.content.IntentFilter;
+import android.content.res.Resources;
+import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
+import android.graphics.Color;
+import android.graphics.Typeface;
+import android.net.Uri;
+import android.os.BatteryManager;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
-import android.view.LayoutInflater;
+import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ImageView;
+import android.widget.RelativeLayout;
+import android.widget.TextClock;
 import android.widget.TextView;
+import org.json.JSONArray;
+import org.json.JSONObject;
+
+import java.io.InputStream;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Random;
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.IXposedHookZygoteInit;
 import de.robv.android.xposed.XC_MethodHook;
@@ -16,21 +40,15 @@ import de.robv.android.xposed.XposedBridge;
 import de.robv.android.xposed.XposedHelpers;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
-import java.util.Random;
-
 public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
 
-    private static final String TAG = "OplusAODManager";
+    private static final String TAG = "OplusAOD";
     private static final String SYSTEM_UI_PACKAGE = "com.android.systemui";
     private static final String MODULE_PACKAGE_NAME = "org.noxylva.oplusaod";
 
     private static final String PREFS_NAME = "OplusAODPrefs";
-    private static final String KEY_SINGLE_TEXT = "custom_aod_text";
-    private static final String KEY_RANDOM_LIST = "random_text_list";
-    private static final String KEY_RANDOM_ENABLED = "random_mode_enabled";
+    private static final String KEY_JSON_LAYOUT = "aod_json_layout";
+    private static final String KEY_IMAGE_PATH = "aod_image_path";
 
     private static final String AOD_RECORD_CLASS = "com.oplus.systemui.aod.AodRecord";
     private static XSharedPreferences prefs;
@@ -56,76 +74,264 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
                     new Handler(Looper.getMainLooper()).post(() -> {
                         try {
                             ViewGroup rootLayout = (ViewGroup) XposedHelpers.getObjectField(aodRecordInstance, "mRootLayout");
-                            if (rootLayout == null || rootLayout.findViewWithTag("custom_aod_view") != null) return;
+                            if (rootLayout == null) return;
+                            
+                            View oldView = rootLayout.findViewWithTag("custom_aod_root_view");
+                            if (oldView != null) rootLayout.removeView(oldView);
 
                             View originalAodClockLayout = (View) XposedHelpers.getObjectField(aodRecordInstance, "mAodClockLayout");
                             if (originalAodClockLayout != null) rootLayout.removeView(originalAodClockLayout);
                             
-                            View customView = createCustomView(context, rootLayout);
+                            View customView = createCustomView(context);
                             if (customView != null) {
-                                customView.setTag("custom_aod_view");
+                                customView.setTag("custom_aod_root_view");
                                 rootLayout.addView(customView);
                             }
                         } catch (Throwable t) {
-                            Log.e(TAG, "Error in startShow hook.", t);
+                            Log.e(TAG, "Hook execution error", t);
                         }
                     });
                 }
             });
         } catch (Throwable t) {
-            Log.e(TAG, "Failed to hook AodRecord.", t);
+                        Log.e(TAG, "Hook AodRecord failed", t);
         }
     }
 
-    private View createCustomView(Context targetContext, ViewGroup root) {
-        String textToShow = "OplusAOD Manager"; 
-        prefs.reload(); 
+    private View createCustomView(Context context) {
+        prefs.reload();
+        String jsonLayoutStr = prefs.getString(KEY_JSON_LAYOUT, null);
+        RelativeLayout container = new RelativeLayout(context);
+        container.setLayoutParams(new ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT
+        ));
 
-        boolean isRandomMode = prefs.getBoolean(KEY_RANDOM_ENABLED, false);
-
-        if (isRandomMode) {
-            String randomListStr = prefs.getString(KEY_RANDOM_LIST, "");
-            if (randomListStr != null && !randomListStr.trim().isEmpty()) {
-                List<String> texts = new ArrayList<>(Arrays.asList(randomListStr.split("\\r?\\n")));
-
-                texts.removeIf(s -> s.trim().isEmpty());
-
-                if (!texts.isEmpty()) {
-                    textToShow = texts.get(random.nextInt(texts.size()));
-                    Log.i(TAG, "Random mode: selected '" + textToShow + "' from list.");
-                } else {
-                     Log.w(TAG, "Random mode is on, but the list is empty after filtering. Using default text.");
-                }
-            } else {
-                Log.w(TAG, "Random mode is on, but the list is empty. Using default text.");
-            }
-        } else {
-            String singleText = prefs.getString(KEY_SINGLE_TEXT, null);
-            if (singleText != null && !singleText.trim().isEmpty()) {
-                textToShow = singleText.trim();
-                Log.i(TAG, "Single mode: showing text '" + textToShow + "'");
-            } else {
-                 Log.w(TAG, "Single mode: text is empty. Using default text.");
-            }
+        if (jsonLayoutStr == null || jsonLayoutStr.isEmpty()) {
+            TextView defaultView = new TextView(context);
+            defaultView.setText("Open OplusAOD Manager to configure");
+            defaultView.setTextColor(Color.WHITE);
+            defaultView.setTextSize(18);
+            defaultView.setGravity(Gravity.CENTER);
+            container.addView(defaultView);
+            return container;
         }
-
+        
         try {
-            Context moduleContext = targetContext.createPackageContext(MODULE_PACKAGE_NAME, Context.CONTEXT_IGNORE_SECURITY);
-            LayoutInflater inflater = LayoutInflater.from(moduleContext);
-            int layoutId = moduleContext.getResources().getIdentifier("custom_aod_layout", "layout", MODULE_PACKAGE_NAME);
-            if (layoutId == 0) return null;
+            JSONArray viewsArray = new JSONArray(jsonLayoutStr);
+            Map<String, Integer> idMap = new HashMap<>();
+            List<View> createdViews = new ArrayList<>();
+            List<JSONObject> jsonObjects = new ArrayList<>();
 
-            View customView = inflater.inflate(layoutId, root, false);
-            int textViewId = moduleContext.getResources().getIdentifier("custom_text", "id", MODULE_PACKAGE_NAME);
-            TextView textView = customView.findViewById(textViewId);
-            
-            if (textView != null) {
-                textView.setText(textToShow);
+            for (int i = 0; i < viewsArray.length(); i++) {
+                JSONObject viewJson = viewsArray.getJSONObject(i);
+                View view = createViewByType(context, viewJson);
+                if (view == null) continue;
+                
+                int viewId = View.generateViewId();
+                view.setId(viewId);
+                if (viewJson.has("id")) {
+                    idMap.put(viewJson.getString("id"), viewId);
+                }
+                applyViewProperties(context, view, viewJson);
+                createdViews.add(view);
+                jsonObjects.add(viewJson);
             }
-            return customView;
+
+            for (int i = 0; i < createdViews.size(); i++) {
+                View view = createdViews.get(i);
+                JSONObject viewJson = jsonObjects.get(i);
+                if (view.getParent() != null) continue;
+                RelativeLayout.LayoutParams params = createLayoutParams(viewJson, idMap);
+                view.setLayoutParams(params);
+                container.addView(view);
+            }
+
         } catch (Exception e) {
-            Log.e(TAG, "Failed to create custom view.", e);
-            return null;
+            Log.e(TAG, "Failed to parse JSON and build layout", e);
+            TextView errorView = new TextView(context);
+            errorView.setText("Layout JSON parsing failed\nCheck logs");
+            errorView.setTextColor(Color.RED);
+            errorView.setGravity(Gravity.CENTER);
+            container.addView(errorView);
         }
+        return container;
+    }
+
+    private View createViewByType(Context context, JSONObject json) {
+        String type = json.optString("type", "TextView");
+        switch (type) {
+            case "TextClock": return new TextClock(context);
+            case "ImageView": return new ImageView(context);
+            default: return new TextView(context);
+        }
+    }
+    
+    private void applyViewProperties(Context context, View view, JSONObject json) {
+        if (json.has("alpha")) {
+            view.setAlpha((float) json.optDouble("alpha", 1.0));
+        }
+
+        String tag = json.optString("tag", "");
+        if (!tag.isEmpty()) {
+            switch (tag) {
+                case "data:date":
+                    if (view instanceof TextView) {
+                        SimpleDateFormat dateFormat = new SimpleDateFormat("EEE, MMM d", Locale.getDefault());
+                        ((TextView) view).setText(dateFormat.format(new Date()));
+                    }
+                    break;
+                case "data:battery_level":
+                    if (view instanceof TextView) ((TextView) view).setText(getBatteryLevel(context));
+                    break;
+                case "data:battery_charging":
+                    if (!isDeviceCharging(context)) view.setVisibility(View.GONE);
+                    break;
+                
+                case "data:user_image":
+                    if (view instanceof ImageView) {
+                        String imageUriString = prefs.getString(KEY_IMAGE_PATH, null);
+                        if (imageUriString != null && !imageUriString.isEmpty()) {
+                            InputStream inputStream = null;
+                            try {
+                                Uri imageUri = Uri.parse(imageUriString);
+                                inputStream = context.getContentResolver().openInputStream(imageUri);
+                                Bitmap bitmap = BitmapFactory.decodeStream(inputStream);
+                                ((ImageView) view).setImageBitmap(bitmap);
+                            } catch (Exception e) {
+                                Log.e(TAG, "Failed to load user image from Provider URI: " + imageUriString, e);
+                            } finally {
+                                if (inputStream != null) {
+                                    try {
+                                        inputStream.close();
+                                    } catch (Exception e) {
+                                        Log.e(TAG, "Failed to close input stream", e);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    break;
+            }
+        } else if (json.has("random_texts")) {
+            if (view instanceof TextView) {
+                try {
+                    JSONArray textsArray = json.getJSONArray("random_texts");
+                    if (textsArray.length() > 0) {
+                        List<String> texts = new ArrayList<>();
+                        for (int i = 0; i < textsArray.length(); i++) {
+                            texts.add(textsArray.getString(i));
+                        }
+                        texts.removeIf(s -> s.trim().isEmpty());
+                        if (!texts.isEmpty()) {
+                            ((TextView) view).setText(texts.get(random.nextInt(texts.size())));
+                        }
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to parse random_texts", e);
+                }
+            }
+        } else if (json.has("text")) {
+            if (view instanceof TextView) {
+                ((TextView) view).setText(json.optString("text"));
+            }
+        }
+        
+        if (view instanceof TextView) {
+            TextView textView = (TextView) view;
+            if (json.has("textColor")) try { textView.setTextColor(Color.parseColor(json.getString("textColor"))); } catch (Exception ignored) {}
+            if (json.has("textSize")) textView.setTextSize((float) json.optDouble("textSize"));
+            if (json.has("textStyle")) {
+                switch (json.optString("textStyle")) {
+                    case "bold": textView.setTypeface(null, Typeface.BOLD); break;
+                    case "italic": textView.setTypeface(null, Typeface.ITALIC); break;
+                    case "bold_italic": textView.setTypeface(null, Typeface.BOLD_ITALIC); break;
+                }
+            }
+        }
+        
+        if (view instanceof TextClock) {
+            TextClock textClock = (TextClock) view;
+            if (json.has("format12Hour")) textClock.setFormat12Hour(json.optString("format12Hour"));
+            if (json.has("format24Hour")) textClock.setFormat24Hour(json.optString("format24Hour"));
+        }
+        
+        if (view instanceof ImageView) {
+            ImageView imageView = (ImageView) view;
+            if (json.has("scaleType")) try { imageView.setScaleType(ImageView.ScaleType.valueOf(json.getString("scaleType").toUpperCase(Locale.ROOT))); } catch (Exception ignored) {}
+        }
+    }
+    
+    private RelativeLayout.LayoutParams createLayoutParams(JSONObject json, Map<String, Integer> idMap) {
+        int width = json.optString("layout_width", "wrap_content").equals("match_parent") ?
+                ViewGroup.LayoutParams.MATCH_PARENT : dpToPx(json.optInt("width", -2));
+
+        int height = json.optString("layout_height", "wrap_content").equals("match_parent") ?
+                ViewGroup.LayoutParams.MATCH_PARENT : dpToPx(json.optInt("height", -2));
+                
+        RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(width, height);
+        
+        JSONObject rules = json.optJSONObject("layout_rules");
+        if (rules != null) {
+            if (rules.optBoolean("centerInParent")) params.addRule(RelativeLayout.CENTER_IN_PARENT);
+            if (rules.optBoolean("centerHorizontal")) params.addRule(RelativeLayout.CENTER_HORIZONTAL);
+            if (rules.optBoolean("centerVertical")) params.addRule(RelativeLayout.CENTER_VERTICAL);
+            if (rules.optBoolean("alignParentTop")) params.addRule(RelativeLayout.ALIGN_PARENT_TOP);
+            if (rules.optBoolean("alignParentBottom")) params.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
+            if (rules.optBoolean("alignParentLeft")) params.addRule(RelativeLayout.ALIGN_PARENT_LEFT);
+            if (rules.optBoolean("alignParentRight")) params.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
+            
+            if (rules.has("below")) {
+                Integer anchorId = idMap.get(rules.optString("below"));
+                if (anchorId != null) params.addRule(RelativeLayout.BELOW, anchorId);
+            }
+            if (rules.has("above")) {
+                Integer anchorId = idMap.get(rules.optString("above"));
+                if (anchorId != null) params.addRule(RelativeLayout.ABOVE, anchorId);
+            }
+            if (rules.has("toRightOf")) {
+                Integer anchorId = idMap.get(rules.optString("toRightOf"));
+                if (anchorId != null) params.addRule(RelativeLayout.RIGHT_OF, anchorId);
+            }
+            if (rules.has("toLeftOf")) {
+                Integer anchorId = idMap.get(rules.optString("toLeftOf"));
+                if (anchorId != null) params.addRule(RelativeLayout.LEFT_OF, anchorId);
+            }
+            if (rules.has("alignBaseline")) {
+                Integer anchorId = idMap.get(rules.optString("alignBaseline"));
+                if (anchorId != null) params.addRule(RelativeLayout.ALIGN_BASELINE, anchorId);
+            }
+        }
+        
+        params.leftMargin = dpToPx(json.optInt("marginLeft", 0));
+        params.topMargin = dpToPx(json.optInt("marginTop", 0));
+        params.rightMargin = dpToPx(json.optInt("marginRight", 0));
+        params.bottomMargin = dpToPx(json.optInt("marginBottom", 0));
+        
+        return params;
+    }
+
+    private int dpToPx(int dp) {
+        if (dp < 0) return dp;
+        return (int) (dp * Resources.getSystem().getDisplayMetrics().density);
+    }
+
+    private String getBatteryLevel(Context context) {
+        IntentFilter filter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
+        Intent batteryStatus = context.registerReceiver(null, filter);
+        if (batteryStatus == null) return "N/A";
+        int level = batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
+        int scale = batteryStatus.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
+        float batteryPct = level * 100 / (float)scale;
+        return (int) batteryPct + "%";
+    }
+
+    private boolean isDeviceCharging(Context context) {
+        IntentFilter filter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
+        Intent batteryStatus = context.registerReceiver(null, filter);
+        if (batteryStatus == null) return false;
+        int status = batteryStatus.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
+        return status == BatteryManager.BATTERY_STATUS_CHARGING ||
+               status == BatteryManager.BATTERY_STATUS_FULL;
     }
 }

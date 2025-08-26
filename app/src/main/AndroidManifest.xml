@@ -2,39 +2,49 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.OPEN_DOCUMENT" />
+            <category android:name="android.intent.category.OPENABLE" />
+            <data android:mimeType="image/*" />
+        </intent>
+    </queries>
+
     <application
-        android:allowBackup="true"
-        android:dataExtractionRules="@xml/data_extraction_rules"
-        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.MyApplication"
-        tools:targetApi="31" >
-        
+        android:theme="@style/Theme.OplusAOD"
+        tools:targetApi="31">
         <activity
             android:name=".SettingsActivity"
-            android:label="@string/app_name"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        
+
+        <provider
+            android:name=".ImageProvider"
+            android:authorities="org.noxylva.oplusaod.provider"
+            android:exported="true"
+            android:grantUriPermissions="true" />
+            
         <meta-data
             android:name="xposedmodule"
             android:value="true" />
         <meta-data
             android:name="xposeddescription"
-            android:value="OplusAOD Manager" />
-          <meta-data
+            android:value="Customizable AOD on Oplus devices" />
+        <meta-data
             android:name="xposedminversion"
             android:value="93" />
-            <meta-data
-                android:name="xposedscope"
-                android:resource="@array/xposedscope"/>
+        <meta-data
+            android:name="xposedscope"
+            android:resource="@array/xposed_scope" />
+
     </application>
 
 </manifest>
