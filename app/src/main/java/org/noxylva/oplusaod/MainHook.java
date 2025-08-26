@@ -23,7 +23,7 @@ import java.util.Random;
 
 public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
 
-    private static final String TAG = "OplusAOD";
+    private static final String TAG = "OplusAODManager";
     private static final String SYSTEM_UI_PACKAGE = "com.android.systemui";
     private static final String MODULE_PACKAGE_NAME = "org.noxylva.oplusaod";
 

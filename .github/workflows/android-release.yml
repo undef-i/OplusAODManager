@@ -61,7 +61,7 @@ jobs:
         fi
         BUILD_NUMBER=${GITHUB_RUN_NUMBER}
         TIMESTAMP=$(date +"%Y%m%d_%H%M")
-        for file in *universal*.apk; do
+        for file in *.apk; do
           mv "$file" "OplusAODManager_${VERSION_TAG}_universal_release_${BUILD_NUMBER}_${TIMESTAMP}.apk"
         done
         
@@ -109,8 +109,8 @@ jobs:
       
     - name: Modify build.gradle for specific ABI
       run: |
-        sed -i 's/include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")/include("${{ matrix.abi }}")/g' app/build.gradle.kts
-        sed -i 's/isUniversalApk = true/isUniversalApk = false/g' app/build.gradle.kts
+        sed -i 's/include("arm64-v8a", "armeabi-v7a", "x86", "x86_64")/include("${{ matrix.abi }}")/g' app/build.gradle
+        sed -i 's/isUniversalApk = true/isUniversalApk = false/g' app/build.gradle
       
     - name: Build Release APK for ${{ matrix.abi }}
       run: ./gradlew assembleRelease
@@ -130,7 +130,9 @@ jobs:
         BUILD_NUMBER=${GITHUB_RUN_NUMBER}
         TIMESTAMP=$(date +"%Y%m%d_%H%M")
         for file in *.apk; do
-          mv "$file" "OplusAODManager_${VERSION_TAG}_${{ matrix.abi }}_release_${BUILD_NUMBER}_${TIMESTAMP}.apk"
+          if [[ "$file" == *"${{ matrix.abi }}"* ]]; then
+            mv "$file" "OplusAODManager_${VERSION_TAG}_${{ matrix.abi }}_release_${BUILD_NUMBER}_${TIMESTAMP}.apk"
+          fi
         done
         
     - name: Upload APK
