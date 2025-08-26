@@ -1,6 +1,6 @@
 # OplusAODManager
 
-ColorOS AOD 文本自定义模块，通过 LSPosed 框架自定义 AOD 。目前仅在 `PKX110_15.0.2.500` 测试通过。
+通过 LSPosed 框架自定义 ColorOS 中的 AOD 。目前仅在 `PKX110_15.0.2.500` 测试通过。
 
 
 ## 自定义布局
