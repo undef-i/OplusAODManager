@@ -1,0 +1,11 @@
+<resources>
+    <string name="app_name">OplusAODManager</string>
+    <string name="settings_title">OplusAOD Manager Settings</string>
+    <string name="custom_text_hint">Enter text to display</string>
+    <string name="save_button">Save Settings</string>
+    <string name="restart_systemui">Restart SystemUI</string>
+    <string name="text_saved">Text saved!</string>
+    <string name="restarting_systemui">Restarting SystemUI...</string>
+    <string name="root_required">Root permission required to restart SystemUI</string>
+    <string name="restart_hint">Note: Restart SystemUI after changing text</string>
+</resources>
