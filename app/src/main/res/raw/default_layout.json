@@ -1,0 +1,120 @@
+[
+  {
+    "type": "android.widget.AnalogClock",
+    "id": "main_analog_clock",
+    "width": 180,
+    "height": 180,
+    "layout_rules": {
+      "centerHorizontal": true,
+      "alignParentTop": true
+    },
+    "marginTop": 150
+  },
+  {
+    "type": "android.widget.TextClock",
+    "id": "digital_clock_secondary",
+    "format12Hour": "hh:mm a",
+    "format24Hour": "HH:mm",
+    "textSize": 28,
+    "textColor": "#FFFFFFFF",
+    "layout_rules": {
+      "below": "main_analog_clock",
+      "centerHorizontal": true
+    },
+    "marginTop": 20
+  },
+  {
+    "type": "android.widget.TextView",
+    "id": "date_text",
+    "tag": "data:date",
+    "textSize": 16,
+    "textColor": "#FFBBBBBB",
+    "layout_rules": {
+      "below": "digital_clock_secondary",
+      "centerHorizontal": true
+    },
+    "marginTop": 8
+  },
+  {
+    "type": "android.widget.ImageView",
+    "id": "gallery_image_left",
+    "width": 100,
+    "height": 150,
+    "tag": "data:user_image[0]",
+    "scaleType": "centerCrop",
+    "layout_rules": {
+      "alignParentBottom": true,
+      "alignParentLeft": true
+    },
+    "marginBottom": 180,
+    "marginLeft": 80
+  },
+  {
+    "type": "android.widget.ImageView",
+    "id": "gallery_image_right",
+    "width": 100,
+    "height": 150,
+    "tag": "data:user_image[1]",
+    "scaleType": "centerCrop",
+    "layout_rules": {
+      "alignParentBottom": true,
+      "alignParentRight": true
+    },
+    "marginBottom": 180,
+    "marginRight": 80
+  },
+  {
+    "type": "android.widget.ImageView",
+    "id": "daily_random_image",
+    "width": 40,
+    "height": 40,
+    "tag": "data:user_image_random",
+    "scaleType": "centerCrop",
+    "layout_rules": {
+      "alignParentTop": true,
+      "alignParentRight": true
+    },
+    "marginTop": 40,
+    "marginRight": 40,
+    "alpha": 0.7
+  },
+  {
+    "type": "android.widget.ProgressBar",
+    "id": "battery_bar",
+    "style": "horizontal",
+    "progress_tag": "data:battery_level",
+    "width": 200,
+    "height": 2,
+    "layout_rules": {
+      "alignParentBottom": true,
+      "centerHorizontal": true
+    },
+    "marginBottom": 60
+  },
+  {
+    "type": "android.widget.TextView",
+    "id": "battery_text",
+    "tag": "data:battery_level",
+    "textSize": 14,
+    "textColor": "#FFCCCCCC",
+    "layout_rules": {
+      "above": "battery_bar",
+      "centerHorizontal": true
+    },
+    "marginBottom": 8
+  },
+  {
+    "type": "android.widget.TextView",
+    "id": "charging_indicator",
+    "text": "CHARGING",
+    "tag": "data:battery_charging",
+    "textSize": 10,
+    "textColor": "#FF00FF00",
+    "textStyle": "bold",
+    "layout_rules": {
+      "below": "battery_bar",
+      "centerHorizontal": true
+    },
+    "marginTop": 8
+  }
+]

@@ -22,7 +22,12 @@ public class ImageProvider extends ContentProvider {
     @Nullable
     @Override
     public ParcelFileDescriptor openFile(@NonNull Uri uri, @NonNull String mode) throws FileNotFoundException {
-        File imageFile = new File(getContext().getFilesDir(), "aod_image.png");
+        String fileName = uri.getLastPathSegment();
+        if (fileName == null) {
+            throw new FileNotFoundException("Missing filename in URI: " + uri);
+        }
+
+        File imageFile = new File(getContext().getFilesDir(), fileName);
 
         if (!imageFile.exists()) {
             throw new FileNotFoundException("Image not found at path: " + imageFile.getAbsolutePath());
@@ -33,14 +38,13 @@ public class ImageProvider extends ContentProvider {
 
     @Nullable
     @Override
-    public Cursor query(@NonNull Uri uri, @Nullable String[] projection, @Nullable String selection, @Nullable String[] selectionArgs, @Nullable String sortOrder) {
-        return null;
-    }
-
-    @Nullable
-    @Override
     public String getType(@NonNull Uri uri) {
         return "image/png";
+    }
+    @Nullable
+    @Override
+    public Cursor query(@NonNull Uri uri, @Nullable String[] projection, @Nullable String selection, @Nullable String[] selectionArgs, @Nullable String sortOrder) {
+        return null;
     }
 
     @Nullable

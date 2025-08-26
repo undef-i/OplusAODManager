@@ -15,7 +15,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="OplusAOD Manager"
+            android:text="OplusAOD Designer"
             android:textAppearance="?attr/textAppearanceHeadlineSmall" />
 
         <TextView
@@ -23,7 +23,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
             android:layout_marginBottom="24dp"
-            android:text="Customize your AOD with JSON"
+            android:text="Design your custom AOD with JSON"
             android:textAppearance="?attr/textAppearanceBodyMedium"
             android:textColor="?attr/colorOnSurfaceVariant" />
 
@@ -61,43 +61,24 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="External Data Sources"
+            android:text="User Images List (for 'data:user_image[...]')"
             android:textAppearance="?attr/textAppearanceTitleMedium" />
-            
-        <TextView
+
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/image_list_recyclerview"
+            android:layout_width="match_parent"
+            android:layout_height="120dp"
+            android:layout_marginTop="8dp"
+            android:scrollbars="horizontal"/>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/add_image_button"
+            style="?attr/materialButtonOutlinedStyle"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="User Image (for 'data:user_image')"
-            android:textAppearance="?attr/textAppearanceBodyLarge"
-            android:textColor="?attr/colorOnSurfaceVariant" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
+            android:layout_gravity="end"
             android:layout_marginTop="8dp"
-            android:gravity="center_vertical"
-            android:orientation="horizontal">
-
-            <com.google.android.material.button.MaterialButton
-                android:id="@+id/choose_image_button"
-                style="?attr/materialButtonOutlinedStyle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="Select Image" />
-
-            <com.google.android.material.imageview.ShapeableImageView
-                android:id="@+id/image_preview"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_marginStart="16dp"
-                android:contentDescription="Image Preview"
-                android:scaleType="centerCrop"
-                android:src="@android:drawable/ic_menu_gallery"
-                app:shapeAppearanceOverlay="@style/ShapeAppearance.Material3.Corner.Small"
-                app:strokeColor="?attr/colorOutline"
-                app:strokeWidth="1dp" />
-        </LinearLayout>
+            android:text="Add Image" />
 
         <View
             android:layout_width="match_parent"
@@ -122,14 +103,14 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
-                android:text="Restart SystemUI" />
+                android:text="Force Restart SystemUI" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="center_horizontal"
                 android:layout_marginTop="12dp"
-                android:text="Required only after first activation or module update"
+                android:text="Restart only needed after first activation or module update"
                 android:textAppearance="?attr/textAppearanceCaption" />
         </LinearLayout>
     </LinearLayout>

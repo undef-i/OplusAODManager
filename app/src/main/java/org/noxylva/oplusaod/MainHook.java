@@ -16,14 +16,15 @@ import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AnalogClock;
 import android.widget.ImageView;
+import android.widget.ProgressBar;
 import android.widget.RelativeLayout;
 import android.widget.TextClock;
 import android.widget.TextView;
 import org.json.JSONArray;
 import org.json.JSONObject;
-
-import java.io.InputStream;
+import java.lang.reflect.Constructor;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Date;
@@ -48,7 +49,7 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
 
     private static final String PREFS_NAME = "OplusAODPrefs";
     private static final String KEY_JSON_LAYOUT = "aod_json_layout";
-    private static final String KEY_IMAGE_PATH = "aod_image_path";
+    private static final String KEY_IMAGE_URIS = "aod_image_uris";
 
     private static final String AOD_RECORD_CLASS = "com.oplus.systemui.aod.AodRecord";
     private static XSharedPreferences prefs;
@@ -75,26 +76,26 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
                         try {
                             ViewGroup rootLayout = (ViewGroup) XposedHelpers.getObjectField(aodRecordInstance, "mRootLayout");
                             if (rootLayout == null) return;
-                            
+
                             View oldView = rootLayout.findViewWithTag("custom_aod_root_view");
                             if (oldView != null) rootLayout.removeView(oldView);
 
                             View originalAodClockLayout = (View) XposedHelpers.getObjectField(aodRecordInstance, "mAodClockLayout");
                             if (originalAodClockLayout != null) rootLayout.removeView(originalAodClockLayout);
-                            
+
                             View customView = createCustomView(context);
                             if (customView != null) {
                                 customView.setTag("custom_aod_root_view");
                                 rootLayout.addView(customView);
                             }
                         } catch (Throwable t) {
-                            Log.e(TAG, "Hook execution error", t);
+                            Log.e(TAG, "Error in startShow hook.", t);
                         }
                     });
                 }
             });
         } catch (Throwable t) {
-                        Log.e(TAG, "Hook AodRecord failed", t);
+            Log.e(TAG, "Failed to hook AodRecord.", t);
         }
     }
 
@@ -109,14 +110,14 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
 
         if (jsonLayoutStr == null || jsonLayoutStr.isEmpty()) {
             TextView defaultView = new TextView(context);
-            defaultView.setText("Open OplusAOD Manager to configure");
+            defaultView.setText("Please configure in OplusAOD Designer");
             defaultView.setTextColor(Color.WHITE);
             defaultView.setTextSize(18);
             defaultView.setGravity(Gravity.CENTER);
             container.addView(defaultView);
             return container;
         }
-        
+
         try {
             JSONArray viewsArray = new JSONArray(jsonLayoutStr);
             Map<String, Integer> idMap = new HashMap<>();
@@ -127,7 +128,7 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
                 JSONObject viewJson = viewsArray.getJSONObject(i);
                 View view = createViewByType(context, viewJson);
                 if (view == null) continue;
-                
+
                 int viewId = View.generateViewId();
                 view.setId(viewId);
                 if (viewJson.has("id")) {
@@ -148,9 +149,9 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
             }
 
         } catch (Exception e) {
-            Log.e(TAG, "Failed to parse JSON and build layout", e);
+            Log.e(TAG, "Failed to parse JSON and build layout.", e);
             TextView errorView = new TextView(context);
-            errorView.setText("Layout JSON parsing failed\nCheck logs");
+            errorView.setText("Failed to parse layout JSON.\nCheck logs for details.");
             errorView.setTextColor(Color.RED);
             errorView.setGravity(Gravity.CENTER);
             container.addView(errorView);
@@ -159,14 +160,25 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
     }
 
     private View createViewByType(Context context, JSONObject json) {
-        String type = json.optString("type", "TextView");
-        switch (type) {
-            case "TextClock": return new TextClock(context);
-            case "ImageView": return new ImageView(context);
-            default: return new TextView(context);
+        String type = json.optString("type", "android.widget.TextView");
+        try {
+            if (type.equals("android.widget.ProgressBar")) {
+                if ("horizontal".equalsIgnoreCase(json.optString("style"))) {
+                    return new ProgressBar(context, null, android.R.attr.progressBarStyleHorizontal);
+                }
+            }
+            Class<?> viewClass = Class.forName(type);
+            Constructor<?> constructor = viewClass.getConstructor(Context.class);
+            return (View) constructor.newInstance(context);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to create view via reflection: " + type, e);
+            TextView errorView = new TextView(context);
+            errorView.setText("Cannot create type:\n" + type);
+            errorView.setTextColor(Color.YELLOW);
+            return errorView;
         }
     }
-    
+
     private void applyViewProperties(Context context, View view, JSONObject json) {
         if (json.has("alpha")) {
             view.setAlpha((float) json.optDouble("alpha", 1.0));
@@ -174,44 +186,57 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
 
         String tag = json.optString("tag", "");
         if (!tag.isEmpty()) {
-            switch (tag) {
-                case "data:date":
-                    if (view instanceof TextView) {
-                        SimpleDateFormat dateFormat = new SimpleDateFormat("EEE, MMM d", Locale.getDefault());
-                        ((TextView) view).setText(dateFormat.format(new Date()));
-                    }
-                    break;
-                case "data:battery_level":
-                    if (view instanceof TextView) ((TextView) view).setText(getBatteryLevel(context));
-                    break;
-                case "data:battery_charging":
-                    if (!isDeviceCharging(context)) view.setVisibility(View.GONE);
-                    break;
-                
-                case "data:user_image":
-                    if (view instanceof ImageView) {
-                        String imageUriString = prefs.getString(KEY_IMAGE_PATH, null);
-                        if (imageUriString != null && !imageUriString.isEmpty()) {
-                            InputStream inputStream = null;
+            if (tag.startsWith("data:user_image")) {
+                if (view instanceof ImageView) {
+                    try {
+                        String urisJsonStr = prefs.getString(KEY_IMAGE_URIS, "[]");
+                        JSONArray uris = new JSONArray(urisJsonStr);
+                        if (uris.length() == 0) return;
+
+                        String targetUriStr = null;
+
+                        if (tag.equals("data:user_image_random")) {
+                            int randomIndex = random.nextInt(uris.length());
+                            targetUriStr = uris.getString(randomIndex);
+                        } else if (tag.matches("data:user_image\\[\\d+\\]")) {
                             try {
-                                Uri imageUri = Uri.parse(imageUriString);
-                                inputStream = context.getContentResolver().openInputStream(imageUri);
-                                Bitmap bitmap = BitmapFactory.decodeStream(inputStream);
-                                ((ImageView) view).setImageBitmap(bitmap);
-                            } catch (Exception e) {
-                                Log.e(TAG, "Failed to load user image from Provider URI: " + imageUriString, e);
-                            } finally {
-                                if (inputStream != null) {
-                                    try {
-                                        inputStream.close();
-                                    } catch (Exception e) {
-                                        Log.e(TAG, "Failed to close input stream", e);
-                                    }
+                                String indexStr = tag.substring(tag.indexOf('[') + 1, tag.indexOf(']'));
+                                int index = Integer.parseInt(indexStr);
+                                if (index >= 0 && index < uris.length()) {
+                                    targetUriStr = uris.getString(index);
                                 }
+                            } catch (Exception e) {
+                                Log.e(TAG, "Failed to parse image index: " + tag, e);
                             }
+                        } else {
+                            targetUriStr = uris.getString(0);
                         }
+
+                        if (targetUriStr != null) {
+                            Uri imageUri = Uri.parse(targetUriStr);
+                            Bitmap bitmap = BitmapFactory.decodeStream(context.getContentResolver().openInputStream(imageUri));
+                            ((ImageView) view).setImageBitmap(bitmap);
+                        }
+
+                    } catch (Exception e) {
+                        Log.e(TAG, "Failed to load user image from Provider URI", e);
                     }
-                    break;
+                }
+            } else {
+                switch (tag) {
+                    case "data:date":
+                        if (view instanceof TextView) {
+                            SimpleDateFormat dateFormat = new SimpleDateFormat("EEE, MMM d", Locale.getDefault());
+                            ((TextView) view).setText(dateFormat.format(new Date()));
+                        }
+                        break;
+                    case "data:battery_level":
+                        if (view instanceof TextView) ((TextView) view).setText(getBatteryLevel(context));
+                        break;
+                    case "data:battery_charging":
+                        if (!isDeviceCharging(context)) view.setVisibility(View.GONE);
+                        break;
+                }
             }
         } else if (json.has("random_texts")) {
             if (view instanceof TextView) {
@@ -219,9 +244,7 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
                     JSONArray textsArray = json.getJSONArray("random_texts");
                     if (textsArray.length() > 0) {
                         List<String> texts = new ArrayList<>();
-                        for (int i = 0; i < textsArray.length(); i++) {
-                            texts.add(textsArray.getString(i));
-                        }
+                        for (int i = 0; i < textsArray.length(); i++) texts.add(textsArray.getString(i));
                         texts.removeIf(s -> s.trim().isEmpty());
                         if (!texts.isEmpty()) {
                             ((TextView) view).setText(texts.get(random.nextInt(texts.size())));
@@ -236,7 +259,7 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
                 ((TextView) view).setText(json.optString("text"));
             }
         }
-        
+
         if (view instanceof TextView) {
             TextView textView = (TextView) view;
             if (json.has("textColor")) try { textView.setTextColor(Color.parseColor(json.getString("textColor"))); } catch (Exception ignored) {}
@@ -249,28 +272,39 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
                 }
             }
         }
-        
+
         if (view instanceof TextClock) {
             TextClock textClock = (TextClock) view;
             if (json.has("format12Hour")) textClock.setFormat12Hour(json.optString("format12Hour"));
             if (json.has("format24Hour")) textClock.setFormat24Hour(json.optString("format24Hour"));
         }
-        
+
         if (view instanceof ImageView) {
             ImageView imageView = (ImageView) view;
             if (json.has("scaleType")) try { imageView.setScaleType(ImageView.ScaleType.valueOf(json.getString("scaleType").toUpperCase(Locale.ROOT))); } catch (Exception ignored) {}
         }
+
+        if (view instanceof ProgressBar) {
+            ProgressBar progressBar = (ProgressBar) view;
+            if (json.has("max")) {
+                progressBar.setMax(json.optInt("max", 100));
+            }
+            String progressTag = json.optString("progress_tag");
+            if ("data:battery_level".equals(progressTag)) {
+                progressBar.setProgress(getBatteryLevelInt(context));
+            }
+        }
     }
-    
+
     private RelativeLayout.LayoutParams createLayoutParams(JSONObject json, Map<String, Integer> idMap) {
-        int width = json.optString("layout_width", "wrap_content").equals("match_parent") ?
+        int width = json.optString("layout_width", "wrap_content").equalsIgnoreCase("match_parent") ?
                 ViewGroup.LayoutParams.MATCH_PARENT : dpToPx(json.optInt("width", -2));
 
-        int height = json.optString("layout_height", "wrap_content").equals("match_parent") ?
+        int height = json.optString("layout_height", "wrap_content").equalsIgnoreCase("match_parent") ?
                 ViewGroup.LayoutParams.MATCH_PARENT : dpToPx(json.optInt("height", -2));
-                
+
         RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(width, height);
-        
+
         JSONObject rules = json.optJSONObject("layout_rules");
         if (rules != null) {
             if (rules.optBoolean("centerInParent")) params.addRule(RelativeLayout.CENTER_IN_PARENT);
@@ -280,7 +314,7 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
             if (rules.optBoolean("alignParentBottom")) params.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
             if (rules.optBoolean("alignParentLeft")) params.addRule(RelativeLayout.ALIGN_PARENT_LEFT);
             if (rules.optBoolean("alignParentRight")) params.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
-            
+
             if (rules.has("below")) {
                 Integer anchorId = idMap.get(rules.optString("below"));
                 if (anchorId != null) params.addRule(RelativeLayout.BELOW, anchorId);
@@ -302,12 +336,12 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
                 if (anchorId != null) params.addRule(RelativeLayout.ALIGN_BASELINE, anchorId);
             }
         }
-        
+
         params.leftMargin = dpToPx(json.optInt("marginLeft", 0));
         params.topMargin = dpToPx(json.optInt("marginTop", 0));
         params.rightMargin = dpToPx(json.optInt("marginRight", 0));
         params.bottomMargin = dpToPx(json.optInt("marginBottom", 0));
-        
+
         return params;
     }
 
@@ -317,13 +351,17 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
     }
 
     private String getBatteryLevel(Context context) {
+        return getBatteryLevelInt(context) + "%";
+    }
+
+    private int getBatteryLevelInt(Context context) {
         IntentFilter filter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
         Intent batteryStatus = context.registerReceiver(null, filter);
-        if (batteryStatus == null) return "N/A";
+        if (batteryStatus == null) return 0;
         int level = batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
         int scale = batteryStatus.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
         float batteryPct = level * 100 / (float)scale;
-        return (int) batteryPct + "%";
+        return (int) batteryPct;
     }
 
     private boolean isDeviceCharging(Context context) {
@@ -332,6 +370,6 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
         if (batteryStatus == null) return false;
         int status = batteryStatus.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
         return status == BatteryManager.BATTERY_STATUS_CHARGING ||
-               status == BatteryManager.BATTERY_STATUS_FULL;
+                status == BatteryManager.BATTERY_STATUS_FULL;
     }
 }

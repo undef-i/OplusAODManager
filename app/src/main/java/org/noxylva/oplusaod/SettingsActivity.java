@@ -1,55 +1,47 @@
 package org.noxylva.oplusaod;
 
 import android.annotation.SuppressLint;
-import android.app.Activity;
 import android.content.Context;
-import android.content.Intent;
 import android.content.SharedPreferences;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.net.Uri;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.ImageView;
-import android.widget.ScrollView;
 import android.widget.Toast;
-
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
-
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 import org.json.JSONArray;
 import org.json.JSONException;
-
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.io.StringWriter;
+import java.util.ArrayList;
+import java.util.List;
 
-public class SettingsActivity extends AppCompatActivity {
+public class SettingsActivity extends AppCompatActivity implements ImageListAdapter.OnImageDeleteListener {
 
     private static final String TAG = "OplusAOD_Settings";
 
     private SharedPreferences sharedPreferences;
     private static final String PREFS_NAME = "OplusAODPrefs";
     private static final String KEY_JSON_LAYOUT = "aod_json_layout";
-    private static final String KEY_IMAGE_PATH = "aod_image_path";
+    private static final String KEY_IMAGE_URIS = "aod_image_uris";
 
     private EditText jsonLayoutInput;
-    private ImageView imagePreview;
+    private RecyclerView imageListRecyclerView;
+    private ImageListAdapter imageListAdapter;
+    private final List<String> imageUriList = new ArrayList<>();
 
-    private ActivityResultLauncher<Intent> imagePickerLauncher;
-    private String selectedImagePath;
-
-    private final ExecutorService executorService = Executors.newSingleThreadExecutor();
-    private final Handler handler = new Handler(Looper.getMainLooper());
+    private ActivityResultLauncher<String> imagePickerLauncher;
 
     @SuppressLint("ClickableViewAccessibility")
     @Override
@@ -59,41 +51,41 @@ public class SettingsActivity extends AppCompatActivity {
 
         sharedPreferences = getSharedPreferences(PREFS_NAME, Context.MODE_WORLD_READABLE);
 
-        ScrollView rootScrollView = findViewById(R.id.root_scroll_view);
         jsonLayoutInput = findViewById(R.id.json_layout_input);
-        imagePreview = findViewById(R.id.image_preview);
         Button restoreDefaultButton = findViewById(R.id.restore_default_button);
-        Button chooseImageButton = findViewById(R.id.choose_image_button);
+        Button addImageButton = findViewById(R.id.add_image_button);
         Button saveButton = findViewById(R.id.save_button);
         Button restartSystemUIButton = findViewById(R.id.restart_systemui_button);
 
+        setupRecyclerView();
+
         jsonLayoutInput.setOnTouchListener((v, event) -> {
-            if (v.getId() == R.id.json_layout_input) {
-                v.getParent().requestDisallowInterceptTouchEvent(true);
-                if ((event.getAction() & MotionEvent.ACTION_UP) != 0) {
-                    v.getParent().requestDisallowInterceptTouchEvent(false);
-                }
+            v.getParent().requestDisallowInterceptTouchEvent(true);
+            if ((event.getAction() & MotionEvent.ACTION_UP) != 0) {
+                v.getParent().requestDisallowInterceptTouchEvent(false);
             }
             return false;
         });
 
         imagePickerLauncher = registerForActivityResult(
-                new ActivityResultContracts.StartActivityForResult(),
-                result -> {
-                    if (result.getResultCode() == Activity.RESULT_OK && result.getData() != null) {
-                        Uri uri = result.getData().getData();
-                        if (uri != null) {
-                            copyImageToFilesDir(uri);
-                        }
-                    }
-                });
+                new ActivityResultContracts.GetMultipleContents(),
+                this::handleImageSelection
+        );
 
         loadSettings();
 
         restoreDefaultButton.setOnClickListener(v -> restoreDefaultJson());
-        chooseImageButton.setOnClickListener(v -> chooseImage());
+        addImageButton.setOnClickListener(v -> imagePickerLauncher.launch("image/*"));
         saveButton.setOnClickListener(v -> saveSettings());
         restartSystemUIButton.setOnClickListener(v -> restartSystemUI());
+    }
+
+    private void setupRecyclerView() {
+        imageListRecyclerView = findViewById(R.id.image_list_recyclerview);
+        imageListAdapter = new ImageListAdapter(this, imageUriList, this);
+        LinearLayoutManager layoutManager = new LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false);
+        imageListRecyclerView.setLayoutManager(layoutManager);
+        imageListRecyclerView.setAdapter(imageListAdapter);
     }
 
     private void loadSettings() {
@@ -104,158 +96,115 @@ public class SettingsActivity extends AppCompatActivity {
             jsonLayoutInput.setText(jsonLayout);
         }
 
-        selectedImagePath = sharedPreferences.getString(KEY_IMAGE_PATH, null);
-        if (selectedImagePath != null) {
-            loadImageInBackground(selectedImagePath);
-        }
-    }
-    
-    private void loadImageInBackground(String uriString) {
-        executorService.execute(() -> {
-            try {
-                Uri imageUri = Uri.parse(uriString);
-                InputStream inputStream = getContentResolver().openInputStream(imageUri);
-                Bitmap bitmap = BitmapFactory.decodeStream(inputStream);
-                handler.post(() -> imagePreview.setImageBitmap(bitmap));
-                if (inputStream != null) {
-                    inputStream.close();
-                }
-            } catch (Exception e) {
-                Log.e(TAG, "Failed to load image preview in background", e);
+        String urisJson = sharedPreferences.getString(KEY_IMAGE_URIS, "[]");
+        imageUriList.clear();
+        try {
+            JSONArray jsonArray = new JSONArray(urisJson);
+            for (int i = 0; i < jsonArray.length(); i++) {
+                imageUriList.add(jsonArray.getString(i));
             }
-        });
+        } catch (JSONException e) {
+            Log.e(TAG, "Failed to parse image URIs JSON", e);
+        }
+        imageListAdapter.notifyDataSetChanged();
     }
-
 
     private void saveSettings() {
         String jsonText = jsonLayoutInput.getText().toString();
         try {
             new JSONArray(jsonText);
         } catch (JSONException e) {
-            Toast.makeText(this, "Save failed: Invalid JSON format!", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Save failed: Invalid JSON format", Toast.LENGTH_LONG).show();
             return;
         }
 
         SharedPreferences.Editor editor = sharedPreferences.edit();
         editor.putString(KEY_JSON_LAYOUT, jsonText);
 
-        if (selectedImagePath != null) {
-            editor.putString(KEY_IMAGE_PATH, selectedImagePath);
-        } else {
-            editor.remove(KEY_IMAGE_PATH);
-        }
+
+        saveImageUrisToPrefs();
 
         editor.apply();
-        Toast.makeText(this, "Settings Saved", Toast.LENGTH_SHORT).show();
+        Toast.makeText(this, "Settings saved", Toast.LENGTH_SHORT).show();
+    }
+
+    private void handleImageSelection(List<Uri> sourceUris) {
+        if (sourceUris == null || sourceUris.isEmpty()) {
+            Toast.makeText(this, "No images selected", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        Toast.makeText(this, "Processing " + sourceUris.size() + " images in background...", Toast.LENGTH_SHORT).show();
+        new Thread(() -> {
+            int successCount = 0;
+            for (Uri sourceUri : sourceUris) {
+                String fileName = "aod_image_" + System.currentTimeMillis() + ".png";
+                File destinationFile = new File(getFilesDir(), fileName);
+
+                try (InputStream in = getContentResolver().openInputStream(sourceUri);
+                     OutputStream out = new FileOutputStream(destinationFile)) {
+                    byte[] buf = new byte[4096];
+                    int len;
+                    while ((len = in.read(buf)) > 0) {
+                        out.write(buf, 0, len);
+                    }
+                    Uri providerUri = Uri.parse("content://" + ImageProvider.AUTHORITY + "/" + destinationFile.getName());
+                    imageUriList.add(providerUri.toString());
+                    successCount++;
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to copy image: " + sourceUri, e);
+                }
+            }
+
+            saveImageUrisToPrefs();
+            int finalSuccessCount = successCount;
+            runOnUiThread(() -> {
+                imageListAdapter.notifyDataSetChanged();
+                Toast.makeText(this, "Successfully added " + finalSuccessCount + " images", Toast.LENGTH_SHORT).show();
+            });
+        }).start();
+    }
+
+    @Override
+    public void onDeleteClick(int position) {
+        if (position >= 0 && position < imageUriList.size()) {
+            String uriString = imageUriList.get(position);
+            Uri uri = Uri.parse(uriString);
+            String fileName = uri.getLastPathSegment();
+            if (fileName != null) {
+                File file = new File(getFilesDir(), fileName);
+                if (file.exists()) {
+                    file.delete();
+                }
+            }
+            imageUriList.remove(position);
+            imageListAdapter.notifyItemRemoved(position);
+            imageListAdapter.notifyItemRangeChanged(position, imageUriList.size());
+            saveImageUrisToPrefs();
+            Toast.makeText(this, "Image deleted", Toast.LENGTH_SHORT).show();
+        }
+    }
+
+    private void saveImageUrisToPrefs() {
+        JSONArray jsonArray = new JSONArray(imageUriList);
+        sharedPreferences.edit().putString(KEY_IMAGE_URIS, jsonArray.toString()).apply();
     }
 
     private void restoreDefaultJson() {
-        String defaultJson = "[\n" +
-                "  {\n" +
-                "    \"type\": \"TextClock\",\n" +
-                "    \"id\": \"clock_view\",\n" +
-                "    \"format24Hour\": \"HH:mm\",\n" +
-                "    \"textSize\": 64,\n" +
-                "    \"textColor\": \"#FFFFFFFF\",\n" +
-                "    \"textStyle\": \"bold\",\n" +
-                "    \"layout_rules\": {\n" +
-                "      \"centerHorizontal\": true,\n" +
-                "      \"alignParentTop\": true\n" +
-                "    },\n" +
-                "    \"marginTop\": 100\n" +
-                "  },\n" +
-                "  {\n" +
-                "    \"type\": \"TextView\",\n" +
-                "    \"id\": \"date_view\",\n" +
-                "    \"tag\": \"data:date\",\n" +
-                "    \"textSize\": 16,\n" +
-                "    \"textColor\": \"#FFCCCCCC\",\n" +
-                "    \"layout_rules\": {\n" +
-                "      \"below\": \"clock_view\",\n" +
-                "      \"centerHorizontal\": true\n" +
-                "    }\n" +
-                "  },\n" +
-                "  {\n" +
-                "    \"type\": \"ImageView\",\n" +
-                "    \"id\": \"image_view\",\n" +
-                "    \"tag\": \"data:user_image\",\n" +
-                "    \"width\": 120,\n" +
-                "    \"height\": 120,\n" +
-                "    \"alpha\": 0.3,\n" +
-                "    \"scaleType\": \"centerCrop\",\n" +
-                "    \"layout_rules\": {\n" +
-                "      \"centerInParent\": true\n" +
-                "    }\n" +
-                "  },\n" +
-                "  {\n" +
-                "    \"type\": \"TextView\",\n" +
-                "    \"id\": \"random_view\",\n" +
-                "    \"random_texts\": [\"foo\", \"bar\", \"baz\"],\n" +
-                "    \"textSize\": 15,\n" +
-                "    \"textColor\": \"#FFAAAAAA\",\n" +
-                "    \"textStyle\": \"italic\",\n" +
-                "    \"layout_rules\": {\n" +
-                "      \"centerInParent\": true\n" +
-                "    }\n" +
-                "  },\n" +
-                "  {\n" +
-                "    \"type\": \"TextView\",\n" +
-                "    \"id\": \"battery_view\",\n" +
-                "    \"tag\": \"data:battery_level\",\n" +
-                "    \"textSize\": 14,\n" +
-                "    \"textColor\": \"#FF888888\",\n" +
-                "    \"layout_rules\": {\n" +
-                "      \"alignParentBottom\": true,\n" +
-                "      \"centerHorizontal\": true\n" +
-                "    },\n" +
-                "    \"marginBottom\": 100\n" +
-                "  },\n" +
-                "  {\n" +
-                "    \"type\": \"TextView\",\n" +
-                "    \"id\": \"charging_view\",\n" +
-                "    \"tag\": \"data:battery_charging\",\n" +
-                "    \"text\": \"⚡\",\n" +
-                "    \"textSize\": 14,\n" +
-                "    \"textColor\": \"#FF00FF00\",\n" +
-                "    \"layout_rules\": {\n" +
-                "      \"alignBaseline\": \"battery_view\",\n" +
-                "      \"toRightOf\": \"battery_view\"\n" +
-                "    },\n" +
-                "    \"marginLeft\": 8\n" +
-                "  }\n" +
-                "]";
-        jsonLayoutInput.setText(defaultJson);
-    }
-    
-    private void chooseImage() {
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        intent.addCategory(Intent.CATEGORY_OPENABLE);
-        intent.setType("image/*");
-        imagePickerLauncher.launch(intent);
-    }
-    
-    private void copyImageToFilesDir(Uri sourceUri) {
-        File destinationFile = new File(getFilesDir(), "aod_image.png");
+        try (InputStream inputStream = getResources().openRawResource(R.raw.default_layout);
+             BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream))) {
 
-        try (InputStream in = getContentResolver().openInputStream(sourceUri);
-             OutputStream out = new FileOutputStream(destinationFile)) {
-            
-            byte[] buf = new byte[4096];
-            int len;
-            while ((len = in.read(buf)) > 0) {
-                out.write(buf, 0, len);
+            StringWriter writer = new StringWriter();
+            char[] buffer = new char[1024];
+            int n;
+            while ((n = reader.read(buffer)) != -1) {
+                writer.write(buffer, 0, n);
             }
-            
-            Uri providerUri = Uri.parse("content://" + ImageProvider.AUTHORITY + "/" + destinationFile.getName());
-            selectedImagePath = providerUri.toString(); 
-            
-            imagePreview.setImageURI(sourceUri);
-            
-            Log.i(TAG, "Image copied. Provider URI to be saved: " + selectedImagePath);
-
+            jsonLayoutInput.setText(writer.toString());
+            Toast.makeText(this, "Default layout restored", Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
-            Log.e(TAG, "Failed to copy image", e);
-            Toast.makeText(this, "Failed to process image.", Toast.LENGTH_SHORT).show();
+            Log.e(TAG, "Failed to read default JSON template", e);
+            Toast.makeText(this, "Error: Unable to load default template!", Toast.LENGTH_LONG).show();
         }
     }
 
@@ -265,7 +214,7 @@ public class SettingsActivity extends AppCompatActivity {
             process.waitFor();
             Toast.makeText(this, "Restarting SystemUI...", Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
-            Toast.makeText(this, "Root permission required to restart SystemUI", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Root access required to restart SystemUI", Toast.LENGTH_LONG).show();
         }
     }
 }

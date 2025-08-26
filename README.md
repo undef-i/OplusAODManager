@@ -1,77 +1,56 @@
 # OplusAODManager
 
-通过 LSPosed 框架自定义 ColorOS 中的 AOD 。目前仅在 `PKX110_15.0.2.500` 测试通过。
+通过 LSPosed 框架为 ColorOS / OxygenOS 提供高度自定义的息屏显示 (AOD)。目前仅在 `PKX110_15.0.2.500` 测试通过。
 
+## 核心概念
 
-## 自定义布局
+息屏界面通过 JSON 数组定义，数组中的每个对象代表一个独立的视图元素（如文本、时钟等）。模块根据 JSON 动态构建布局。
 
-布局是一个JSON数组 `[ ]`，其中每个对象 `{ }` 代表一个视图元素。
+### 视图对象属性
 
-### 视图对象 `{ }` 属性
+- `type` (字符串): (必需) 视图的完整类名，通过反射创建。
+  - 常用值: `android.widget.TextView`, `android.widget.TextClock`, `android.widget.ImageView`, `android.widget.AnalogClock`, `android.widget.ProgressBar`
 
-  * `type`: (字符串) 视图类型。
-  * `id`: (字符串) 视图的唯一标识符，用于相对定位。
-  * `width`: (数字) 宽度，单位dp。
-  * `height`: (数字) 高度，单位dp。
-  * `alpha`: (数字) 透明度，范围 0.0 到 1.0。
-  * `marginTop`: (数字) 顶部外边距, dp。
-  * `marginLeft`: (数字) 左侧外边距, dp。
-  * `marginRight`: (数字) 右侧外边距, dp。
-  * `marginBottom`: (数字) 底部外边距, dp。
-  * `text`: (字符串) 显示的静态文本。
-  * `textColor`: (字符串) 文本颜色，十六进制代码。例: `"#FFFFFFFF"`。
-  * `textSize`: (数字) 文本大小。
-  * `textStyle`: (字符串) 文本样式。
-  * `random_texts`: (数组) 字符串数组，每次随机显示其中一个。
-  * `tag`: (字符串) 用于显示动态数据。
-  * `layout_rules`: (对象) 定义视图的位置规则。
+- `id` (字符串): 视图的唯一标识，用于 `layout_rules` 相对定位。
 
-### `layout_rules` 对象属性
+- `width`, `height` (数字): 视图的宽高 (单位: dp)。
 
-  * 相对于屏幕定位 (值为 `true`):
+- `alpha` (数字): 透明度 (范围: 0.0 - 1.0)。
 
-      * `centerInParent`
-      * `centerHorizontal`
-      * `centerVertical`
-      * `alignParentTop`
-      * `alignParentBottom`
-      * `alignParentLeft`
-      * `alignParentRight`
+- `marginLeft`, `marginRight`, `marginTop`, `marginBottom` (数字): 外边距 (单位: dp)。
 
-  * 相对于其他视图定位 (值为另一个视图的 `id` 字符串):
+- `layout_rules` (对象): (核心) 定义视图位置的规则集，详见下文。
 
-      * `below`
-      * `above`
-      * `toRightOf`
-      * `toLeftOf`
-      * `alignBaseline`
+- `text` (字符串): 静态文本内容。
 
-### 可用值列表
+- `textColor` (字符串): 文本颜色，例如 `#FFFFFFFF`。
 
-  * `type` 可用值:
+- `textSize` (数字): 文本大小 (单位: sp)。  
 
-      * `"TextView"`
-      * `"TextClock"`
-      * `"ImageView"`
+- `textStyle` (字符串): 文本样式，可选值: `normal`, `italic`, `bold`, `bold_italic`。
 
-  * `tag` 可用值:
+- `random_texts` (字符串数组): 每次随机显示数组中的一个字符串。
 
-      * `"data:date"`: 显示日期。
-      * `"data:battery_level"`: 显示电量。
-      * `"data:battery_charging"`: 充电时才显示此视图。
-      * `"data:user_image"`: 显示用户选择的图片。
+- `tag` (字符串): 动态数据标签，用于显示实时信息。
+  - `data:date`: 当前日期。
+  - `data:battery_level`: 电量百分比。
+  - `data:battery_charging`: 仅在充电时显示。
+  - `data:user_image_random`: 随机显示一张用户图片。
+  - `data:user_image[N]`: 显示第 N 张用户图片 (N 从 0 开始)。
 
-  * `textStyle` 可用值:
+- `format24Hour`, `format12Hour` (字符串): TextClock 专用，定义 24/12 小时制时间格式，例如 `HH:mm`。
 
-      * `"bold"`
-      * `"italic"`
-      * `"bold_italic"`
+- `scaleType` (字符串): ImageView 专用，图片缩放类型，例如 `centerCrop`。
 
-  * `TextClock` 专属属性:
+- `progress_tag` (字符串): ProgressBar 专用，用于绑定数据，例如 `data:battery_level`。
 
-      * `format24Hour`: (字符串) 24小时制格式。例: `"HH:mm"`。
-      * `format12Hour`: (字符串) 12小时制格式。例: `"hh:mm a"`。
+### layout_rules 定位规则
 
-  * `ImageView` 专属属性:
+#### 相对于屏幕定位
 
-      * `scaleType`: (字符串) 图片缩放类型。例: `"centerCrop"`, `"fitCenter"`。
+`centerInParent`, `centerHorizontal`, `centerVertical`, `alignParentTop`, `alignParentBottom`, `alignParentLeft`, `alignParentRight`
+
+#### 相对于其他视图定位
+
+`below`, `above`, `toLeftOf`, `toRightOf` (值为另一个视图的 `id` 字符串)
+
