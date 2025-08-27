@@ -9,8 +9,8 @@ import android.os.Bundle;
 import android.util.Log;
 import android.view.MotionEvent;
 import android.widget.Button;
-import android.widget.EditText;
 import android.widget.Toast;
+import io.github.rosemoe.sora.widget.CodeEditor;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
@@ -37,7 +37,7 @@ public class SettingsActivity extends AppCompatActivity implements ImageListAdap
     private static final String KEY_JSON_LAYOUT = "aod_json_layout";
     private static final String KEY_IMAGE_URIS = "aod_image_uris";
 
-    private EditText jsonLayoutInput;
+    private CodeEditor jsonLayoutInput;
     private RecyclerView imageListRecyclerView;
     private ImageListAdapter imageListAdapter;
     private final List<String> imageUriList = new ArrayList<>();

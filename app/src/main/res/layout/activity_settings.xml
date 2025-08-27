@@ -27,22 +27,14 @@
             android:textAppearance="?attr/textAppearanceBodyMedium"
             android:textColor="?attr/colorOnSurfaceVariant" />
 
-        <com.google.android.material.textfield.TextInputLayout
-            style="@style/Widget.Material3.TextInputLayout.OutlinedBox"
+        <io.github.rosemoe.sora.widget.CodeEditor
+            android:id="@+id/json_layout_input"
             android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="AOD Layout (JSON)">
-
-            <com.google.android.material.textfield.TextInputEditText
-                android:id="@+id/json_layout_input"
-                android:layout_width="match_parent"
-                android:layout_height="350dp"
-                android:fontFamily="monospace"
-                android:gravity="top"
-                android:inputType="textMultiLine"
-                android:scrollbars="vertical"
-                android:textSize="12sp" />
-        </com.google.android.material.textfield.TextInputLayout>
+            android:layout_height="350dp"
+            android:layout_marginTop="8dp"
+            app:textSize="12sp"
+            android:gravity="top"
+            app:fontFamily="monospace" />
 
         <com.google.android.material.button.MaterialButton
             android:id="@+id/restore_default_button"
