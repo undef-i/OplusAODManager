@@ -10,14 +10,17 @@ import android.util.Log;
 import android.view.MotionEvent;
 import android.widget.Button;
 import android.widget.Toast;
-import io.github.rosemoe.sora.widget.CodeEditor;
+
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+
+import org.eclipse.tm4e.core.registry.IThemeSource;
 import org.json.JSONArray;
 import org.json.JSONException;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -27,22 +30,40 @@ import java.io.OutputStream;
 import java.io.StringWriter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
+import io.github.rosemoe.sora.langs.textmate.TextMateColorScheme;
+import io.github.rosemoe.sora.langs.textmate.TextMateLanguage;
+import io.github.rosemoe.sora.langs.textmate.registry.FileProviderRegistry;
+import io.github.rosemoe.sora.langs.textmate.registry.GrammarRegistry;
+import io.github.rosemoe.sora.langs.textmate.registry.ThemeRegistry;
+import io.github.rosemoe.sora.langs.textmate.registry.model.ThemeModel;
+import io.github.rosemoe.sora.langs.textmate.registry.provider.AssetsFileResolver;
+import io.github.rosemoe.sora.widget.CodeEditor;
 
 public class SettingsActivity extends AppCompatActivity implements ImageListAdapter.OnImageDeleteListener {
 
     private static final String TAG = "OplusAOD_Settings";
 
-    private SharedPreferences sharedPreferences;
     private static final String PREFS_NAME = "OplusAODPrefs";
     private static final String KEY_JSON_LAYOUT = "aod_json_layout";
     private static final String KEY_IMAGE_URIS = "aod_image_uris";
 
+    private static final String THEME_NAME = "quietlight";
+    private static final String THEME_PATH = "textmate/" + THEME_NAME + ".json";
+    private static final String LANGUAGES_CONFIG_PATH = "textmate/language.json";
+    private static final String JSON_SCOPE_NAME = "source.json";
+
+    private SharedPreferences sharedPreferences;
     private CodeEditor jsonLayoutInput;
-    private RecyclerView imageListRecyclerView;
     private ImageListAdapter imageListAdapter;
     private final List<String> imageUriList = new ArrayList<>();
-
-    private ActivityResultLauncher<String> imagePickerLauncher;
+    private ActivityResultLauncher<String[]> imagePickerLauncher;
+    
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private static boolean isTextMateInitialized = false;
+    private TextMateLanguage textMateLanguage;
 
     @SuppressLint("ClickableViewAccessibility")
     @Override
@@ -60,31 +81,66 @@ public class SettingsActivity extends AppCompatActivity implements ImageListAdap
         Button restartSystemUIButton = findViewById(R.id.restart_systemui_button);
 
         setupRecyclerView();
+        initializeEditor();
 
         jsonLayoutInput.setOnTouchListener((v, event) -> {
             v.getParent().requestDisallowInterceptTouchEvent(true);
-            if ((event.getAction() & MotionEvent.ACTION_UP) != 0) {
+            if ((event.getAction() & MotionEvent.ACTION_MASK) == MotionEvent.ACTION_UP) {
                 v.getParent().requestDisallowInterceptTouchEvent(false);
             }
             return false;
         });
 
         imagePickerLauncher = registerForActivityResult(
-                new ActivityResultContracts.GetMultipleContents(),
-                this::handleImageSelection
-        );
-
-        loadSettings();
+                new ActivityResultContracts.OpenMultipleDocuments(),
+                this::handleImageSelection);
 
         restoreDefaultButton.setOnClickListener(v -> restoreDefaultJson());
-        addImageButton.setOnClickListener(v -> imagePickerLauncher.launch("image/*"));
+        addImageButton.setOnClickListener(v -> imagePickerLauncher.launch(new String[]{"image/*"}));
         previewButton.setOnClickListener(v -> showPreview());
         saveButton.setOnClickListener(v -> saveSettings());
         restartSystemUIButton.setOnClickListener(v -> restartSystemUI());
     }
 
+    private void initializeEditor() {
+        executor.execute(() -> {
+            try {
+                if (!isTextMateInitialized) {
+                    FileProviderRegistry.getInstance().addFileProvider(new AssetsFileResolver(getAssets()));
+                    ThemeRegistry themeRegistry = ThemeRegistry.getInstance();
+                    
+                    InputStream themeStream = getAssets().open(THEME_PATH);
+                    IThemeSource themeSource = IThemeSource.fromInputStream(themeStream, THEME_PATH, null);
+                    ThemeModel themeModel = new ThemeModel(themeSource, THEME_NAME);
+                    
+                    themeRegistry.loadTheme(themeModel);
+                    themeRegistry.setTheme(THEME_NAME);
+                    GrammarRegistry.getInstance().loadGrammars(LANGUAGES_CONFIG_PATH);
+                    isTextMateInitialized = true;
+                }
+
+                this.textMateLanguage = TextMateLanguage.create(JSON_SCOPE_NAME, true);
+
+                runOnUiThread(() -> {
+                    try {
+                        jsonLayoutInput.setColorScheme(TextMateColorScheme.create(ThemeRegistry.getInstance()));
+                        jsonLayoutInput.setEditorLanguage(this.textMateLanguage);
+                        loadSettings();
+                    } catch (Exception e) {
+                        Log.e(TAG, "Failed to apply color scheme or language to editor.", e);
+                        Toast.makeText(SettingsActivity.this, "Failed to setup editor.", Toast.LENGTH_SHORT).show();
+                    }
+                });
+
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to initialize TextMate in background.", e);
+                runOnUiThread(() -> Toast.makeText(this, "Error initializing code editor.", Toast.LENGTH_LONG).show());
+            }
+        });
+    }
+
     private void setupRecyclerView() {
-        imageListRecyclerView = findViewById(R.id.image_list_recyclerview);
+        RecyclerView imageListRecyclerView = findViewById(R.id.image_list_recyclerview);
         imageListAdapter = new ImageListAdapter(this, imageUriList, this);
         LinearLayoutManager layoutManager = new LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false);
         imageListRecyclerView.setLayoutManager(layoutManager);
@@ -115,7 +171,11 @@ public class SettingsActivity extends AppCompatActivity implements ImageListAdap
     private void saveSettings() {
         String jsonText = jsonLayoutInput.getText().toString();
         try {
-            new JSONArray(jsonText);
+            if (jsonText.trim().startsWith("[")) {
+                new JSONArray(jsonText);
+            } else {
+                new org.json.JSONObject(jsonText);
+            }
         } catch (JSONException e) {
             Toast.makeText(this, "Save failed: Invalid JSON format", Toast.LENGTH_LONG).show();
             return;
@@ -123,11 +183,9 @@ public class SettingsActivity extends AppCompatActivity implements ImageListAdap
 
         SharedPreferences.Editor editor = sharedPreferences.edit();
         editor.putString(KEY_JSON_LAYOUT, jsonText);
-
-
-        saveImageUrisToPrefs();
-
+        editor.putString(KEY_IMAGE_URIS, new JSONArray(imageUriList).toString());
         editor.apply();
+
         Toast.makeText(this, "Settings saved", Toast.LENGTH_SHORT).show();
     }
 
@@ -136,36 +194,38 @@ public class SettingsActivity extends AppCompatActivity implements ImageListAdap
             Toast.makeText(this, "No images selected", Toast.LENGTH_SHORT).show();
             return;
         }
-
-        Toast.makeText(this, "Processing " + sourceUris.size() + " images in background...", Toast.LENGTH_SHORT).show();
-        new Thread(() -> {
+        Toast.makeText(this, "Processing " + sourceUris.size() + " images...", Toast.LENGTH_SHORT).show();
+        
+        executor.execute(() -> {
             int successCount = 0;
             for (Uri sourceUri : sourceUris) {
-                String fileName = "aod_image_" + System.currentTimeMillis() + ".png";
-                File destinationFile = new File(getFilesDir(), fileName);
+                try {
+                    getContentResolver().takePersistableUriPermission(sourceUri, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                    String fileName = "aod_image_" + System.currentTimeMillis() + ".png";
+                    File destinationFile = new File(getFilesDir(), fileName);
 
-                try (InputStream in = getContentResolver().openInputStream(sourceUri);
-                     OutputStream out = new FileOutputStream(destinationFile)) {
-                    byte[] buf = new byte[4096];
-                    int len;
-                    while ((len = in.read(buf)) > 0) {
-                        out.write(buf, 0, len);
+                    try (InputStream in = getContentResolver().openInputStream(sourceUri);
+                         OutputStream out = new FileOutputStream(destinationFile)) {
+                        byte[] buf = new byte[4096];
+                        int len;
+                        while ((len = in.read(buf)) > 0) {
+                            out.write(buf, 0, len);
+                        }
+                        Uri providerUri = Uri.parse("content://" + ImageProvider.AUTHORITY + "/" + destinationFile.getName());
+                        imageUriList.add(providerUri.toString());
+                        successCount++;
                     }
-                    Uri providerUri = Uri.parse("content://" + ImageProvider.AUTHORITY + "/" + destinationFile.getName());
-                    imageUriList.add(providerUri.toString());
-                    successCount++;
                 } catch (Exception e) {
                     Log.e(TAG, "Failed to copy image: " + sourceUri, e);
                 }
             }
-
-            saveImageUrisToPrefs();
+            
             int finalSuccessCount = successCount;
             runOnUiThread(() -> {
                 imageListAdapter.notifyDataSetChanged();
                 Toast.makeText(this, "Successfully added " + finalSuccessCount + " images", Toast.LENGTH_SHORT).show();
             });
-        }).start();
+        });
     }
 
     @Override
@@ -174,23 +234,24 @@ public class SettingsActivity extends AppCompatActivity implements ImageListAdap
             String uriString = imageUriList.get(position);
             Uri uri = Uri.parse(uriString);
             String fileName = uri.getLastPathSegment();
+
             if (fileName != null) {
-                File file = new File(getFilesDir(), fileName);
-                if (file.exists()) {
-                    file.delete();
+                File fileToDelete = new File(getFilesDir(), fileName);
+                if (fileToDelete.exists() && fileToDelete.delete()) {
+                    Log.i(TAG, "Deleted file: " + fileName);
                 }
             }
             imageUriList.remove(position);
             imageListAdapter.notifyItemRemoved(position);
-            imageListAdapter.notifyItemRangeChanged(position, imageUriList.size());
             saveImageUrisToPrefs();
             Toast.makeText(this, "Image deleted", Toast.LENGTH_SHORT).show();
         }
     }
 
     private void saveImageUrisToPrefs() {
-        JSONArray jsonArray = new JSONArray(imageUriList);
-        sharedPreferences.edit().putString(KEY_IMAGE_URIS, jsonArray.toString()).apply();
+        sharedPreferences.edit()
+                .putString(KEY_IMAGE_URIS, new JSONArray(imageUriList).toString())
+                .apply();
     }
 
     private void restoreDefaultJson() {
@@ -212,35 +273,38 @@ public class SettingsActivity extends AppCompatActivity implements ImageListAdap
     }
 
     private void restartSystemUI() {
-        try {
-            Process process = Runtime.getRuntime().exec("su -c pkill -f com.android.systemui");
-            process.waitFor();
-            Toast.makeText(this, "Restarting SystemUI...", Toast.LENGTH_SHORT).show();
-        } catch (Exception e) {
-            Toast.makeText(this, getString(R.string.root_required), Toast.LENGTH_LONG).show();
-        }
+        Toast.makeText(this, "Attempting to restart SystemUI...", Toast.LENGTH_SHORT).show();
+        executor.execute(() -> {
+            try {
+                Process process = Runtime.getRuntime().exec(new String[]{"su", "-c", "pkill -f com.android.systemui"});
+                
+                int exitCode = process.waitFor();
+                runOnUiThread(() -> {
+                    if (exitCode == 0) {
+                        Toast.makeText(this, "SystemUI restarted.", Toast.LENGTH_SHORT).show();
+                    } else {
+                        Toast.makeText(this, "Failed to restart SystemUI. Root access denied or command failed?", Toast.LENGTH_LONG).show();
+                    }
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> Toast.makeText(this, getString(R.string.root_required), Toast.LENGTH_LONG).show());
+            }
+        });
     }
 
     private void showPreview() {
         String jsonText = jsonLayoutInput.getText().toString();
-        if (jsonText.trim().isEmpty()) {
-            Toast.makeText(this, "JSON is empty, cannot preview", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        
-        try {
-            new JSONArray(jsonText);
-        } catch (JSONException e) {
-            Toast.makeText(this, "Preview failed: Invalid JSON format!", Toast.LENGTH_LONG).show();
-            return;
-        }
-
         Intent intent = new Intent(this, AodPreviewActivity.class);
-        intent.putExtra("aod_json_layout", jsonText);
-        
-        JSONArray imageUrisArray = new JSONArray(imageUriList);
-        intent.putExtra("aod_image_uris", imageUrisArray.toString());
-
+        intent.putExtra(KEY_JSON_LAYOUT, jsonText);
+        intent.putExtra(KEY_IMAGE_URIS, new JSONArray(imageUriList).toString());
         startActivity(intent);
+    }
+
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+        if (executor != null && !executor.isShutdown()) {
+            executor.shutdown();
+        }
     }
 }
