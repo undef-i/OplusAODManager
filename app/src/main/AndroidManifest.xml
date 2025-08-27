@@ -25,6 +25,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        
+        <activity
+            android:name=".AodPreviewActivity"
+            android:theme="@style/Theme.OplusAOD.Preview"
+            android:exported="false" />
 
         <provider
             android:name=".ImageProvider"

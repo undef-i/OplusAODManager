@@ -2,6 +2,7 @@ package org.noxylva.oplusaod;
 
 import android.annotation.SuppressLint;
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.net.Uri;
 import android.os.Bundle;
@@ -54,6 +55,7 @@ public class SettingsActivity extends AppCompatActivity implements ImageListAdap
         jsonLayoutInput = findViewById(R.id.json_layout_input);
         Button restoreDefaultButton = findViewById(R.id.restore_default_button);
         Button addImageButton = findViewById(R.id.add_image_button);
+        Button previewButton = findViewById(R.id.preview_button);
         Button saveButton = findViewById(R.id.save_button);
         Button restartSystemUIButton = findViewById(R.id.restart_systemui_button);
 
@@ -76,6 +78,7 @@ public class SettingsActivity extends AppCompatActivity implements ImageListAdap
 
         restoreDefaultButton.setOnClickListener(v -> restoreDefaultJson());
         addImageButton.setOnClickListener(v -> imagePickerLauncher.launch("image/*"));
+        previewButton.setOnClickListener(v -> showPreview());
         saveButton.setOnClickListener(v -> saveSettings());
         restartSystemUIButton.setOnClickListener(v -> restartSystemUI());
     }
@@ -216,5 +219,28 @@ public class SettingsActivity extends AppCompatActivity implements ImageListAdap
         } catch (Exception e) {
             Toast.makeText(this, getString(R.string.root_required), Toast.LENGTH_LONG).show();
         }
+    }
+
+    private void showPreview() {
+        String jsonText = jsonLayoutInput.getText().toString();
+        if (jsonText.trim().isEmpty()) {
+            Toast.makeText(this, "JSON is empty, cannot preview", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        
+        try {
+            new JSONArray(jsonText);
+        } catch (JSONException e) {
+            Toast.makeText(this, "Preview failed: Invalid JSON format!", Toast.LENGTH_LONG).show();
+            return;
+        }
+
+        Intent intent = new Intent(this, AodPreviewActivity.class);
+        intent.putExtra("aod_json_layout", jsonText);
+        
+        JSONArray imageUrisArray = new JSONArray(imageUriList);
+        intent.putExtra("aod_image_uris", imageUrisArray.toString());
+
+        startActivity(intent);
     }
 }

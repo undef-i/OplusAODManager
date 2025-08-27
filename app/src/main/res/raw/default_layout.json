@@ -72,6 +72,7 @@
         "text": "Switch",
         "checked": true,
         "textColor": "#FFA5D6A7",
+        "buttonTint": "#FFA5D6A7",
         "layout_rules": { "below": "image_label", "alignParentLeft": true },
         "marginTop": 20,
         "marginLeft": 40
@@ -81,10 +82,11 @@
         "id": "checkbox_demo",
         "width": 150,
         "text": "CheckBox",
-        "checked": false,
+        "checked": true,
         "textColor": "#FFA5D6A7",
+        "buttonTint": "#FFA5D6A7",
         "layout_rules": { "alignTop": "switch_demo", "alignParentRight": true },
-        "marginRight": 40
+        "marginRight": 400
     },
     {
         "type": "android.widget.RatingBar",

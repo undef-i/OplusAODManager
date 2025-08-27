@@ -1,8 +1,11 @@
-<resources>
+<resources xmlns:tools="http://schemas.android.com/tools">
     <style name="Base.Theme.OplusAOD" parent="Theme.Material3.DayNight.NoActionBar">
         <item name="colorPrimary">@color/md_theme_primary</item>
         <item name="colorOnPrimary">@color/md_theme_onPrimary</item>
         </style>
 
     <style name="Theme.OplusAOD" parent="Base.Theme.OplusAOD" />
+    
+    <style name="Theme.OplusAOD.Preview" parent="Theme.Material3.DayNight.NoActionBar"></style>
+    
 </resources>

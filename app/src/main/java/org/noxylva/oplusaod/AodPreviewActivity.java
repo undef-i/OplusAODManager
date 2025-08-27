@@ -1,27 +1,28 @@
 package org.noxylva.oplusaod;
 
+import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
-import android.content.res.ColorStateList;
 import android.content.res.Resources;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.graphics.Color;
-import android.graphics.Typeface;
 import android.net.Uri;
 import android.os.BatteryManager;
-import android.os.Handler;
-import android.os.Looper;
+import android.os.Bundle;
 import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
+import android.view.Window;
+import android.view.WindowManager;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.RelativeLayout;
-import android.widget.TextClock;
 import android.widget.TextView;
+
+import androidx.annotation.Nullable;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -40,91 +41,51 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Random;
 
-import de.robv.android.xposed.IXposedHookLoadPackage;
-import de.robv.android.xposed.IXposedHookZygoteInit;
-import de.robv.android.xposed.XC_MethodHook;
-import de.robv.android.xposed.XSharedPreferences;
-import de.robv.android.xposed.XposedBridge;
-import de.robv.android.xposed.XposedHelpers;
-import de.robv.android.xposed.callbacks.XC_LoadPackage;
+public class AodPreviewActivity extends Activity {
 
-public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
-
-    private static final String TAG = "OplusAOD";
-    private static final String SYSTEM_UI_PACKAGE = "com.android.systemui";
-    private static final String MODULE_PACKAGE_NAME = "org.noxylva.oplusaod";
-
-    private static final String PREFS_NAME = "OplusAODPrefs";
-    private static final String KEY_JSON_LAYOUT = "aod_json_layout";
-    private static final String KEY_IMAGE_URIS = "aod_image_uris";
-
-    private static final String AOD_RECORD_CLASS = "com.oplus.systemui.aod.AodRecord";
-    private static XSharedPreferences prefs;
+    private static final String TAG = "AODPreview";
     private final Random random = new Random();
+    private String imageUrisJson; // Store image URIs for the preview
 
     @Override
-    public void initZygote(StartupParam startupParam) {
-        prefs = new XSharedPreferences(MODULE_PACKAGE_NAME, PREFS_NAME);
-    }
+    protected void onCreate(@Nullable Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+        // Set fullscreen
+        requestWindowFeature(Window.FEATURE_NO_TITLE);
+        getWindow().setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                WindowManager.LayoutParams.FLAG_FULLSCREEN);
 
-    @Override
-    public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) {
-        if (!lpparam.packageName.equals(SYSTEM_UI_PACKAGE))
-            return;
+        setContentView(R.layout.activity_aod_preview);
 
-        try {
-            final Class<?> aodRecordClass = XposedHelpers.findClass(AOD_RECORD_CLASS, lpparam.classLoader);
-            XposedBridge.hookAllMethods(aodRecordClass, "startShow", new XC_MethodHook() {
-                @Override
-                protected void afterHookedMethod(MethodHookParam param) {
-                    final Object aodRecordInstance = param.thisObject;
-                    final Context context = (Context) XposedHelpers.getObjectField(aodRecordInstance, "mContext");
+        RelativeLayout rootLayout = findViewById(R.id.preview_root_layout);
 
-                    new Handler(Looper.getMainLooper()).post(() -> {
-                        try {
-                            ViewGroup rootLayout = (ViewGroup) XposedHelpers.getObjectField(aodRecordInstance, "mRootLayout");
-                            if (rootLayout == null) return;
+        // Get data from SettingsActivity
+        Intent intent = getIntent();
+        String jsonLayoutStr = intent.getStringExtra("aod_json_layout");
+        this.imageUrisJson = intent.getStringExtra("aod_image_uris");
 
-                            View oldView = rootLayout.findViewWithTag("custom_aod_root_view");
-                            if (oldView != null) rootLayout.removeView(oldView);
-
-                            View originalAodClockLayout = (View) XposedHelpers.getObjectField(aodRecordInstance, "mAodClockLayout");
-                            if (originalAodClockLayout != null) rootLayout.removeView(originalAodClockLayout);
-
-                            View customView = createCustomView(context);
-                            if (customView != null) {
-                                customView.setTag("custom_aod_root_view");
-                                rootLayout.addView(customView);
-                            }
-                        } catch (Throwable t) {
-                            Log.e(TAG, "Error in startShow hook.", t);
-                        }
-                    });
-                }
-            });
-        } catch (Throwable t) {
-            Log.e(TAG, "Failed to hook AodRecord.", t);
+        if (jsonLayoutStr != null && !jsonLayoutStr.isEmpty()) {
+            View previewView = createCustomView(this, jsonLayoutStr);
+            if (previewView != null) {
+                rootLayout.addView(previewView);
+            } else {
+                // Show error message if view creation fails
+                TextView errorView = new TextView(this);
+                errorView.setText("Failed to build preview from JSON.\nCheck JSON syntax.");
+                errorView.setTextColor(Color.RED);
+                errorView.setGravity(Gravity.CENTER);
+                rootLayout.addView(errorView);
+            }
         }
     }
 
-    private View createCustomView(Context context) {
-        prefs.reload();
-        String jsonLayoutStr = prefs.getString(KEY_JSON_LAYOUT, null);
+    // --- The following code is carefully adapted from MainHook.java ---
+
+    private View createCustomView(Context context, String jsonLayoutStr) {
         RelativeLayout container = new RelativeLayout(context);
         container.setLayoutParams(new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT));
-
-        if (jsonLayoutStr == null || jsonLayoutStr.isEmpty()) {
-            TextView defaultView = new TextView(context);
-            defaultView.setText("Please configure in OplusAOD Manager");
-            defaultView.setTextColor(Color.WHITE);
-            defaultView.setTextSize(18);
-            defaultView.setGravity(Gravity.CENTER);
-            container.addView(defaultView);
-            return container;
-        }
-
         try {
             JSONArray viewsArray = new JSONArray(jsonLayoutStr);
             Map<String, Integer> idMap = new HashMap<>();
@@ -154,16 +115,11 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
                 view.setLayoutParams(params);
                 container.addView(view);
             }
-
+            return container;
         } catch (Exception e) {
             Log.e(TAG, "Failed to parse JSON and build layout.", e);
-            TextView errorView = new TextView(context);
-            errorView.setText("Failed to parse layout JSON.\nCheck logs for details.");
-            errorView.setTextColor(Color.RED);
-            errorView.setGravity(Gravity.CENTER);
-            container.addView(errorView);
+            return null;
         }
-        return container;
     }
 
     private View createViewByType(Context context, JSONObject json) {
@@ -185,18 +141,18 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
 
     private void applyViewProperties(Context context, View view, JSONObject json) {
         List<String> specialKeys = Arrays.asList(
-            "type", "id", "width", "height", "layout_width", "layout_height",
-            "layout_rules", "marginLeft", "marginRight", "marginTop", "marginBottom",
-            "tag", "progress_tag", "style"
+                "type", "id", "width", "height", "layout_width", "layout_height",
+                "layout_rules", "marginLeft", "marginRight", "marginTop", "marginBottom",
+                "tag", "progress_tag", "style"
         );
 
         if (json.has("tag")) {
             String tag = json.optString("tag");
             if (tag.startsWith("data:user_image")) {
-                if (view instanceof ImageView) {
+                // MODIFICATION: Read from instance variable instead of SharedPreferences
+                if (view instanceof ImageView && this.imageUrisJson != null) {
                     try {
-                        String urisJsonStr = prefs.getString(KEY_IMAGE_URIS, "[]");
-                        JSONArray uris = new JSONArray(urisJsonStr);
+                        JSONArray uris = new JSONArray(this.imageUrisJson);
                         if (uris.length() == 0) return;
                         String targetUriStr = null;
                         if (tag.equals("data:user_image_random")) {
@@ -216,7 +172,7 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
                             ((ImageView) view).setImageBitmap(bitmap);
                         }
                     } catch (Exception e) {
-                        Log.e(TAG, "Failed to load user image", e);
+                        Log.e(TAG, "Preview failed to load user image", e);
                     }
                 }
             } else {
@@ -273,20 +229,14 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
                     method.invoke(view, convertedValue);
                     return;
                 }
-            } catch (Exception e) {}
+            } catch (Exception e) {
+                // Ignore and continue, another overload might work
+            }
         }
     }
 
     private Object convertValueToType(Object value, Class<?> targetType, String key, View view) {
-        if (targetType == ColorStateList.class) {
-            if (value instanceof String) {
-                try {
-                    int color = Color.parseColor((String) value);
-                    return ColorStateList.valueOf(color);
-                } catch (Exception e) {}
-            }
-        }
-        else if (targetType == float.class || targetType == Float.class) {
+        if (targetType == float.class || targetType == Float.class) {
             if (value instanceof Number) return ((Number) value).floatValue();
             if (value instanceof String) return Float.parseFloat((String) value);
         } else if (targetType == int.class || targetType == Integer.class) {
@@ -304,7 +254,7 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
         } else if (CharSequence.class.isAssignableFrom(targetType)) {
             return value.toString();
         }
-        return null; 
+        return null; // Conversion failed
     }
 
     private int parseGravity(String gravityString) {
@@ -358,7 +308,6 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
     private String getBatteryLevel(Context context) {
         return getBatteryLevelInt(context) + "%";
     }
-
 
     private int getBatteryLevelInt(Context context) {
         IntentFilter filter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
