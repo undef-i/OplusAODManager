@@ -1,56 +1,52 @@
 # OplusAODManager
 
-通过 LSPosed 框架为 ColorOS / OxygenOS 提供高度自定义的息屏显示 (AOD)。目前仅在 `PKX110_15.0.2.500` 测试通过。
+基于 LSPosed 框架的 ColorOS/OxygenOS 息屏显示 (AOD) 自定义工具。已在 `PKX110_15.0.2.500` 测试通过。
 
-## 核心概念
+## 视图配置
 
-息屏界面通过 JSON 数组定义，数组中的每个对象代表一个独立的视图元素（如文本、时钟等）。模块根据 JSON 动态构建布局。
+每个视图对象遵循以下配置规范：
 
-### 视图对象属性
+### 基础属性
 
-- `type` (字符串): (必需) 视图的完整类名，通过反射创建。
-  - 常用值: `android.widget.TextView`, `android.widget.TextClock`, `android.widget.ImageView`, `android.widget.AnalogClock`, `android.widget.ProgressBar`
+- `type` (`字符串`): 必填，视图完整类名
+  - 常用：`TextView`, `TextClock`, `ImageView`, `AnalogClock`, `ProgressBar`
+- `id` (`字符串`): 视图唯一标识符，用于相对定位
 
-- `id` (字符串): 视图的唯一标识，用于 `layout_rules` 相对定位。
+### 尺寸边距
 
-- `width`, `height` (数字): 视图的宽高 (单位: dp)。
+- `width`, `height` (`数字`): 宽高 (dp)
+- `marginLeft`, `marginRight`, `marginTop`, `marginBottom` (`数字`): 外边距 (dp)
 
-- `alpha` (数字): 透明度 (范围: 0.0 - 1.0)。
+### 数据绑定
 
-- `marginLeft`, `marginRight`, `marginTop`, `marginBottom` (数字): 外边距 (单位: dp)。
+- `tag` (`字符串`): 动态数据源
+  - `data:date`: 当前日期
+  - `data:battery_level`: 电量百分比
+  - `data:battery_charging`: 仅充电时显示
+  - `data:user_image_random`: 随机用户图片
+  - `data:user_image[N]`: 第 N 张用户图片 (从 0 开始)
+- `progress_tag` (`字符串`): ProgressBar 进度绑定 (`data:battery_level`)
 
-- `layout_rules` (对象): (核心) 定义视图位置的规则集，详见下文。
+### 通用属性
 
-- `text` (字符串): 静态文本内容。
+其他属性自动映射到视图 `set...` 方法：
 
-- `textColor` (字符串): 文本颜色，例如 `#FFFFFFFF`。
+- JSON 属性 `someProperty` → 调用 `setSomeProperty(...)`
+- 示例：
+  - `"textColor": "#FFFF00"` → `setTextColor(int)`
+  - `"rotation": 45` → `setRotation(float)`
+  - `"textSize": 22` → `setTextSize(float)`
 
-- `textSize` (数字): 文本大小 (单位: sp)。  
+常用属性：
+- 通用：`alpha`, `rotation`, `padding`
+- 文本：`text`, `textColor`, `textSize`, `gravity`, `letterSpacing`
+- 图片：`scaleType`
+- 时钟：`format12Hour`, `format24Hour`
 
-- `textStyle` (字符串): 文本样式，可选值: `normal`, `italic`, `bold`, `bold_italic`。
+## 布局规则 (`layout_rules`)
 
-- `random_texts` (字符串数组): 每次随机显示数组中的一个字符串。
+定义视图屏幕位置：
 
-- `tag` (字符串): 动态数据标签，用于显示实时信息。
-  - `data:date`: 当前日期。
-  - `data:battery_level`: 电量百分比。
-  - `data:battery_charging`: 仅在充电时显示。
-  - `data:user_image_random`: 随机显示一张用户图片。
-  - `data:user_image[N]`: 显示第 N 张用户图片 (N 从 0 开始)。
-
-- `format24Hour`, `format12Hour` (字符串): TextClock 专用，定义 24/12 小时制时间格式，例如 `HH:mm`。
-
-- `scaleType` (字符串): ImageView 专用，图片缩放类型，例如 `centerCrop`。
-
-- `progress_tag` (字符串): ProgressBar 专用，用于绑定数据，例如 `data:battery_level`。
-
-### layout_rules 定位规则
-
-#### 相对于屏幕定位
-
-`centerInParent`, `centerHorizontal`, `centerVertical`, `alignParentTop`, `alignParentBottom`, `alignParentLeft`, `alignParentRight`
-
-#### 相对于其他视图定位
-
-`below`, `above`, `toLeftOf`, `toRightOf` (值为另一个视图的 `id` 字符串)
+- 相对屏幕：`centerInParent`, `centerHorizontal`, `centerVertical`, `alignParentTop`, `alignParentBottom`, `alignParentLeft`, `alignParentRight` (值：`true`)
+- 相对视图：`below`, `above`, `toLeftOf`, `toRightOf` (值：目标视图 `id`)
 

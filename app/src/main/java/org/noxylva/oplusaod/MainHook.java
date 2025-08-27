@@ -16,23 +16,29 @@ import android.util.Log;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.widget.AnalogClock;
 import android.widget.ImageView;
 import android.widget.ProgressBar;
 import android.widget.RelativeLayout;
 import android.widget.TextClock;
 import android.widget.TextView;
+
 import org.json.JSONArray;
+import org.json.JSONException;
 import org.json.JSONObject;
+
 import java.lang.reflect.Constructor;
+import java.lang.reflect.Method;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Random;
+
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.IXposedHookZygoteInit;
 import de.robv.android.xposed.XC_MethodHook;
@@ -62,7 +68,8 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
 
     @Override
     public void handleLoadPackage(XC_LoadPackage.LoadPackageParam lpparam) {
-        if (!lpparam.packageName.equals(SYSTEM_UI_PACKAGE)) return;
+        if (!lpparam.packageName.equals(SYSTEM_UI_PACKAGE))
+            return;
 
         try {
             final Class<?> aodRecordClass = XposedHelpers.findClass(AOD_RECORD_CLASS, lpparam.classLoader);
@@ -74,14 +81,19 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
 
                     new Handler(Looper.getMainLooper()).post(() -> {
                         try {
-                            ViewGroup rootLayout = (ViewGroup) XposedHelpers.getObjectField(aodRecordInstance, "mRootLayout");
-                            if (rootLayout == null) return;
+                            ViewGroup rootLayout = (ViewGroup) XposedHelpers.getObjectField(aodRecordInstance,
+                                    "mRootLayout");
+                            if (rootLayout == null)
+                                return;
 
                             View oldView = rootLayout.findViewWithTag("custom_aod_root_view");
-                            if (oldView != null) rootLayout.removeView(oldView);
+                            if (oldView != null)
+                                rootLayout.removeView(oldView);
 
-                            View originalAodClockLayout = (View) XposedHelpers.getObjectField(aodRecordInstance, "mAodClockLayout");
-                            if (originalAodClockLayout != null) rootLayout.removeView(originalAodClockLayout);
+                            View originalAodClockLayout = (View) XposedHelpers.getObjectField(aodRecordInstance,
+                                    "mAodClockLayout");
+                            if (originalAodClockLayout != null)
+                                rootLayout.removeView(originalAodClockLayout);
 
                             View customView = createCustomView(context);
                             if (customView != null) {
@@ -105,12 +117,11 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
         RelativeLayout container = new RelativeLayout(context);
         container.setLayoutParams(new ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT
-        ));
+                ViewGroup.LayoutParams.MATCH_PARENT));
 
         if (jsonLayoutStr == null || jsonLayoutStr.isEmpty()) {
             TextView defaultView = new TextView(context);
-            defaultView.setText("Please configure in OplusAOD Designer");
+            defaultView.setText("Please configure in OplusAOD Manager");
             defaultView.setTextColor(Color.WHITE);
             defaultView.setTextSize(18);
             defaultView.setGravity(Gravity.CENTER);
@@ -127,7 +138,8 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
             for (int i = 0; i < viewsArray.length(); i++) {
                 JSONObject viewJson = viewsArray.getJSONObject(i);
                 View view = createViewByType(context, viewJson);
-                if (view == null) continue;
+                if (view == null)
+                    continue;
 
                 int viewId = View.generateViewId();
                 view.setId(viewId);
@@ -142,7 +154,8 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
             for (int i = 0; i < createdViews.size(); i++) {
                 View view = createdViews.get(i);
                 JSONObject viewJson = jsonObjects.get(i);
-                if (view.getParent() != null) continue;
+                if (view.getParent() != null)
+                    continue;
                 RelativeLayout.LayoutParams params = createLayoutParams(viewJson, idMap);
                 view.setLayoutParams(params);
                 container.addView(view);
@@ -172,181 +185,229 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
             return (View) constructor.newInstance(context);
         } catch (Exception e) {
             Log.e(TAG, "Failed to create view via reflection: " + type, e);
-            TextView errorView = new TextView(context);
-            errorView.setText("Cannot create type:\n" + type);
-            errorView.setTextColor(Color.YELLOW);
-            return errorView;
+            return null;
         }
     }
 
     private void applyViewProperties(Context context, View view, JSONObject json) {
-        if (json.has("alpha")) {
-            view.setAlpha((float) json.optDouble("alpha", 1.0));
-        }
+        List<String> specialKeys = Arrays.asList(
+                "type", "id", "width", "height", "layout_width", "layout_height",
+                "layout_rules", "marginLeft", "marginRight", "marginTop", "marginBottom",
+                "tag", "progress_tag", "style");
 
-        String tag = json.optString("tag", "");
-        if (!tag.isEmpty()) {
+        if (json.has("tag")) {
+            String tag = json.optString("tag");
             if (tag.startsWith("data:user_image")) {
                 if (view instanceof ImageView) {
                     try {
                         String urisJsonStr = prefs.getString(KEY_IMAGE_URIS, "[]");
                         JSONArray uris = new JSONArray(urisJsonStr);
-                        if (uris.length() == 0) return;
-
+                        if (uris.length() == 0)
+                            return;
                         String targetUriStr = null;
-
                         if (tag.equals("data:user_image_random")) {
-                            int randomIndex = random.nextInt(uris.length());
-                            targetUriStr = uris.getString(randomIndex);
+                            targetUriStr = uris.getString(random.nextInt(uris.length()));
                         } else if (tag.matches("data:user_image\\[\\d+\\]")) {
-                            try {
-                                String indexStr = tag.substring(tag.indexOf('[') + 1, tag.indexOf(']'));
-                                int index = Integer.parseInt(indexStr);
-                                if (index >= 0 && index < uris.length()) {
-                                    targetUriStr = uris.getString(index);
-                                }
-                            } catch (Exception e) {
-                                Log.e(TAG, "Failed to parse image index: " + tag, e);
+                            String indexStr = tag.substring(tag.indexOf('[') + 1, tag.indexOf(']'));
+                            int index = Integer.parseInt(indexStr);
+                            if (index >= 0 && index < uris.length()) {
+                                targetUriStr = uris.getString(index);
                             }
                         } else {
                             targetUriStr = uris.getString(0);
                         }
-
                         if (targetUriStr != null) {
                             Uri imageUri = Uri.parse(targetUriStr);
-                            Bitmap bitmap = BitmapFactory.decodeStream(context.getContentResolver().openInputStream(imageUri));
+                            Bitmap bitmap = BitmapFactory
+                                    .decodeStream(context.getContentResolver().openInputStream(imageUri));
                             ((ImageView) view).setImageBitmap(bitmap);
                         }
-
                     } catch (Exception e) {
-                        Log.e(TAG, "Failed to load user image from Provider URI", e);
+                        Log.e(TAG, "Failed to load user image", e);
                     }
                 }
             } else {
                 switch (tag) {
                     case "data:date":
                         if (view instanceof TextView) {
-                            SimpleDateFormat dateFormat = new SimpleDateFormat("EEE, MMM d", Locale.getDefault());
-                            ((TextView) view).setText(dateFormat.format(new Date()));
+                            ((TextView) view).setText(
+                                    new SimpleDateFormat("EEE, MMM d", Locale.getDefault()).format(new Date()));
                         }
                         break;
                     case "data:battery_level":
-                        if (view instanceof TextView) ((TextView) view).setText(getBatteryLevel(context));
+                        if (view instanceof TextView) {
+                            ((TextView) view).setText(getBatteryLevel(context));
+                        }
                         break;
                     case "data:battery_charging":
-                        if (!isDeviceCharging(context)) view.setVisibility(View.GONE);
+                        if (!isDeviceCharging(context)) {
+                            view.setVisibility(View.GONE);
+                        }
                         break;
                 }
             }
-        } else if (json.has("random_texts")) {
-            if (view instanceof TextView) {
+        }
+
+        Iterator<String> keys = json.keys();
+        while (keys.hasNext()) {
+            String key = keys.next();
+            if (!specialKeys.contains(key)) {
                 try {
-                    JSONArray textsArray = json.getJSONArray("random_texts");
-                    if (textsArray.length() > 0) {
-                        List<String> texts = new ArrayList<>();
-                        for (int i = 0; i < textsArray.length(); i++) texts.add(textsArray.getString(i));
-                        texts.removeIf(s -> s.trim().isEmpty());
-                        if (!texts.isEmpty()) {
-                            ((TextView) view).setText(texts.get(random.nextInt(texts.size())));
-                        }
-                    }
-                } catch (Exception e) {
-                    Log.e(TAG, "Failed to parse random_texts", e);
+                    applyGenericProperty(view, key, json.get(key));
+                } catch (JSONException e) {
+                    Log.e(TAG, "Error getting value for key: " + key, e);
                 }
             }
-        } else if (json.has("text")) {
-            if (view instanceof TextView) {
-                ((TextView) view).setText(json.optString("text"));
-            }
-        }
-
-        if (view instanceof TextView) {
-            TextView textView = (TextView) view;
-            if (json.has("textColor")) try { textView.setTextColor(Color.parseColor(json.getString("textColor"))); } catch (Exception ignored) {}
-            if (json.has("textSize")) textView.setTextSize((float) json.optDouble("textSize"));
-            if (json.has("textStyle")) {
-                switch (json.optString("textStyle")) {
-                    case "bold": textView.setTypeface(null, Typeface.BOLD); break;
-                    case "italic": textView.setTypeface(null, Typeface.ITALIC); break;
-                    case "bold_italic": textView.setTypeface(null, Typeface.BOLD_ITALIC); break;
-                }
-            }
-        }
-
-        if (view instanceof TextClock) {
-            TextClock textClock = (TextClock) view;
-            if (json.has("format12Hour")) textClock.setFormat12Hour(json.optString("format12Hour"));
-            if (json.has("format24Hour")) textClock.setFormat24Hour(json.optString("format24Hour"));
-        }
-
-        if (view instanceof ImageView) {
-            ImageView imageView = (ImageView) view;
-            if (json.has("scaleType")) try { imageView.setScaleType(ImageView.ScaleType.valueOf(json.getString("scaleType").toUpperCase(Locale.ROOT))); } catch (Exception ignored) {}
         }
 
         if (view instanceof ProgressBar) {
-            ProgressBar progressBar = (ProgressBar) view;
-            if (json.has("max")) {
-                progressBar.setMax(json.optInt("max", 100));
-            }
             String progressTag = json.optString("progress_tag");
             if ("data:battery_level".equals(progressTag)) {
-                progressBar.setProgress(getBatteryLevelInt(context));
+                ((ProgressBar) view).setProgress(getBatteryLevelInt(context));
             }
         }
     }
 
-    private RelativeLayout.LayoutParams createLayoutParams(JSONObject json, Map<String, Integer> idMap) {
-        int width = json.optString("layout_width", "wrap_content").equalsIgnoreCase("match_parent") ?
-                ViewGroup.LayoutParams.MATCH_PARENT : dpToPx(json.optInt("width", -2));
-
-        int height = json.optString("layout_height", "wrap_content").equalsIgnoreCase("match_parent") ?
-                ViewGroup.LayoutParams.MATCH_PARENT : dpToPx(json.optInt("height", -2));
-
-        RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(width, height);
-
-        JSONObject rules = json.optJSONObject("layout_rules");
-        if (rules != null) {
-            if (rules.optBoolean("centerInParent")) params.addRule(RelativeLayout.CENTER_IN_PARENT);
-            if (rules.optBoolean("centerHorizontal")) params.addRule(RelativeLayout.CENTER_HORIZONTAL);
-            if (rules.optBoolean("centerVertical")) params.addRule(RelativeLayout.CENTER_VERTICAL);
-            if (rules.optBoolean("alignParentTop")) params.addRule(RelativeLayout.ALIGN_PARENT_TOP);
-            if (rules.optBoolean("alignParentBottom")) params.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
-            if (rules.optBoolean("alignParentLeft")) params.addRule(RelativeLayout.ALIGN_PARENT_LEFT);
-            if (rules.optBoolean("alignParentRight")) params.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
-
-            if (rules.has("below")) {
-                Integer anchorId = idMap.get(rules.optString("below"));
-                if (anchorId != null) params.addRule(RelativeLayout.BELOW, anchorId);
+    private void applyGenericProperty(View view, String key, Object value) {
+        String methodName = "set" + key.substring(0, 1).toUpperCase(Locale.ROOT) + key.substring(1);
+        for (Method method : view.getClass().getMethods()) {
+            if (!method.getName().equals(methodName) || method.getParameterCount() != 1) {
+                continue;
             }
-            if (rules.has("above")) {
-                Integer anchorId = idMap.get(rules.optString("above"));
-                if (anchorId != null) params.addRule(RelativeLayout.ABOVE, anchorId);
+            try {
+                Class<?> paramType = method.getParameterTypes()[0];
+                Object convertedValue = convertValueToType(value, paramType, key, view);
+                if (convertedValue != null) {
+                    method.invoke(view, convertedValue);
+                    return;
+                }
+            } catch (Exception e) {}
+        }
+    }
+
+    private Object convertValueToType(Object value, Class<?> targetType, String key, View view) {
+        if (targetType == float.class || targetType == Float.class) {
+            if (value instanceof Number)
+                return ((Number) value).floatValue();
+            if (value instanceof String)
+                return Float.parseFloat((String) value);
+        } else if (targetType == int.class || targetType == Integer.class) {
+            if (value instanceof Number)
+                return ((Number) value).intValue();
+            if (value instanceof String) {
+                String strValue = (String) value;
+                try {
+                    return Color.parseColor(strValue);
+                } catch (Exception e) {
+                }
+                if (key.equals("gravity") && view instanceof TextView) {
+                    try {
+                        return parseGravity(strValue);
+                    } catch (Exception e) {
+                    }
+                }
+                try {
+                    return Integer.parseInt(strValue);
+                } catch (Exception e) {
+                }
             }
-            if (rules.has("toRightOf")) {
-                Integer anchorId = idMap.get(rules.optString("toRightOf"));
-                if (anchorId != null) params.addRule(RelativeLayout.RIGHT_OF, anchorId);
-            }
-            if (rules.has("toLeftOf")) {
-                Integer anchorId = idMap.get(rules.optString("toLeftOf"));
-                if (anchorId != null) params.addRule(RelativeLayout.LEFT_OF, anchorId);
-            }
-            if (rules.has("alignBaseline")) {
-                Integer anchorId = idMap.get(rules.optString("alignBaseline"));
-                if (anchorId != null) params.addRule(RelativeLayout.ALIGN_BASELINE, anchorId);
+        } else if (targetType == boolean.class || targetType == Boolean.class) {
+            if (value instanceof Boolean)
+                return value;
+        } else if (CharSequence.class.isAssignableFrom(targetType)) {
+            return value.toString();
+        }
+        return null;
+    }
+
+    private int parseGravity(String gravityString) {
+        int gravity = Gravity.NO_GRAVITY;
+        if (gravityString == null)
+            return gravity;
+        String[] gravities = gravityString.toLowerCase(Locale.ROOT).split("\\|");
+        for (String g : gravities) {
+            switch (g.trim()) {
+                case "left":
+                    gravity |= Gravity.LEFT;
+                    break;
+                case "right":
+                    gravity |= Gravity.RIGHT;
+                    break;
+                case "top":
+                    gravity |= Gravity.TOP;
+                    break;
+                case "bottom":
+                    gravity |= Gravity.BOTTOM;
+                    break;
+                case "center":
+                    gravity |= Gravity.CENTER;
+                    break;
+                case "center_horizontal":
+                    gravity |= Gravity.CENTER_HORIZONTAL;
+                    break;
+                case "center_vertical":
+                    gravity |= Gravity.CENTER_VERTICAL;
+                    break;
             }
         }
+        return gravity;
+    }
 
+    private RelativeLayout.LayoutParams createLayoutParams(JSONObject json, Map<String, Integer> idMap) {
+        int width = json.optString("layout_width", "wrap_content").equalsIgnoreCase("match_parent")
+                ? ViewGroup.LayoutParams.MATCH_PARENT
+                : dpToPx(json.optInt("width", -2));
+        int height = json.optString("layout_height", "wrap_content").equalsIgnoreCase("match_parent")
+                ? ViewGroup.LayoutParams.MATCH_PARENT
+                : dpToPx(json.optInt("height", -2));
+        RelativeLayout.LayoutParams params = new RelativeLayout.LayoutParams(width, height);
+        JSONObject rules = json.optJSONObject("layout_rules");
+        if (rules != null) {
+            if (rules.optBoolean("centerInParent"))
+                params.addRule(RelativeLayout.CENTER_IN_PARENT);
+            if (rules.optBoolean("centerHorizontal"))
+                params.addRule(RelativeLayout.CENTER_HORIZONTAL);
+            if (rules.optBoolean("centerVertical"))
+                params.addRule(RelativeLayout.CENTER_VERTICAL);
+            if (rules.optBoolean("alignParentTop"))
+                params.addRule(RelativeLayout.ALIGN_PARENT_TOP);
+            if (rules.optBoolean("alignParentBottom"))
+                params.addRule(RelativeLayout.ALIGN_PARENT_BOTTOM);
+            if (rules.optBoolean("alignParentLeft"))
+                params.addRule(RelativeLayout.ALIGN_PARENT_LEFT);
+            if (rules.optBoolean("alignParentRight"))
+                params.addRule(RelativeLayout.ALIGN_PARENT_RIGHT);
+            if (rules.has("below")) {
+                Integer id = idMap.get(rules.optString("below"));
+                if (id != null)
+                    params.addRule(RelativeLayout.BELOW, id);
+            }
+            if (rules.has("above")) {
+                Integer id = idMap.get(rules.optString("above"));
+                if (id != null)
+                    params.addRule(RelativeLayout.ABOVE, id);
+            }
+            if (rules.has("toRightOf")) {
+                Integer id = idMap.get(rules.optString("toRightOf"));
+                if (id != null)
+                    params.addRule(RelativeLayout.RIGHT_OF, id);
+            }
+            if (rules.has("toLeftOf")) {
+                Integer id = idMap.get(rules.optString("toLeftOf"));
+                if (id != null)
+                    params.addRule(RelativeLayout.LEFT_OF, id);
+            }
+        }
         params.leftMargin = dpToPx(json.optInt("marginLeft", 0));
         params.topMargin = dpToPx(json.optInt("marginTop", 0));
         params.rightMargin = dpToPx(json.optInt("marginRight", 0));
         params.bottomMargin = dpToPx(json.optInt("marginBottom", 0));
-
         return params;
     }
 
     private int dpToPx(int dp) {
-        if (dp < 0) return dp;
+        if (dp < 0)
+            return dp;
         return (int) (dp * Resources.getSystem().getDisplayMetrics().density);
     }
 
@@ -357,19 +418,19 @@ public class MainHook implements IXposedHookZygoteInit, IXposedHookLoadPackage {
     private int getBatteryLevelInt(Context context) {
         IntentFilter filter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
         Intent batteryStatus = context.registerReceiver(null, filter);
-        if (batteryStatus == null) return 0;
+        if (batteryStatus == null)
+            return 0;
         int level = batteryStatus.getIntExtra(BatteryManager.EXTRA_LEVEL, -1);
         int scale = batteryStatus.getIntExtra(BatteryManager.EXTRA_SCALE, -1);
-        float batteryPct = level * 100 / (float)scale;
-        return (int) batteryPct;
+        return (int) (level * 100 / (float) scale);
     }
 
     private boolean isDeviceCharging(Context context) {
         IntentFilter filter = new IntentFilter(Intent.ACTION_BATTERY_CHANGED);
         Intent batteryStatus = context.registerReceiver(null, filter);
-        if (batteryStatus == null) return false;
+        if (batteryStatus == null)
+            return false;
         int status = batteryStatus.getIntExtra(BatteryManager.EXTRA_STATUS, -1);
-        return status == BatteryManager.BATTERY_STATUS_CHARGING ||
-                status == BatteryManager.BATTERY_STATUS_FULL;
+        return status == BatteryManager.BATTERY_STATUS_CHARGING || status == BatteryManager.BATTERY_STATUS_FULL;
     }
 }
