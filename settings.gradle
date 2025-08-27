@@ -20,5 +20,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "OplusAODCustomizer"
+rootProject.name = "OplusAOD Manager"
 include ':app'

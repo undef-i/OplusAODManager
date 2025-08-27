@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">OplusAODManager</string>
+    <string name="app_name">OplusAOD Manager</string>
     <string name="settings_title">OplusAOD Manager Settings</string>
     <string name="custom_text_hint">Enter text to display</string>
     <string name="save_button">Save Settings</string>

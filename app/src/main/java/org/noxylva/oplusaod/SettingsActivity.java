@@ -214,7 +214,7 @@ public class SettingsActivity extends AppCompatActivity implements ImageListAdap
             process.waitFor();
             Toast.makeText(this, "Restarting SystemUI...", Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
-            Toast.makeText(this, "Root access required to restart SystemUI", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, getString(R.string.root_required), Toast.LENGTH_LONG).show();
         }
     }
 }
